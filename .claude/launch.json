@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "streamlit-rag-pipeline",
+      "runtimeExecutable": "rag-pipeline/.venv/Scripts/streamlit.exe",
+      "runtimeArgs": ["run", "rag-pipeline/streamlit_app.py", "--server.headless", "true"],
+      "port": 8501
+    }
+  ]
+}

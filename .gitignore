@@ -1,0 +1,21 @@
+# Données volumineuses / sensibles (livres sources, corpus condensé, base RAG)
+corpusdedepart/
+corpuscondense/
+rag_data/
+
+# Environnement virtuel Python
+.venv-rag/
+.venv/
+venv/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Fichiers d'état / verrous locaux
+.claude/scheduled_tasks.lock
+
+# Divers OS/éditeur
+.DS_Store
+Thumbs.db
