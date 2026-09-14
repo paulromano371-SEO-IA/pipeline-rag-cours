@@ -1,6 +1,6 @@
 # Pipeline RAG pour supports de cours
 
-Ce projet transforme un livre technique complet (PDF) en un **support de cours condensé en français**, puis ingère ce support dans une base de connaissances interrogeable : recherche vectorielle (RAG classique) **et** graphe de concepts (GraphRAG), le tout via une série de [skills Claude Code](https://docs.claude.com/claude-code) enchaînés.
+Ce projet transforme un livre technique complet (PDF) en un **support de cours condensé de grande qualité et en français **, puis ingère ce support dans une base de connaissances interrogeable : recherche vectorielle (RAG classique) **et** graphe de concepts (GraphRAG), le tout via une série de [skills Claude Code](https://docs.claude.com/claude-code) enchaînés.
 
 L'idée générale : un livre de plusieurs centaines de pages est rarement exploitable tel quel comme support de cours. Le pipeline le condense d'abord fidèlement (texte, code, illustrations), puis découpe et indexe ce condensé pour qu'il devienne consultable par un assistant IA — avec la possibilité, à terme, de croiser les concepts entre plusieurs livres ingérés.
 
