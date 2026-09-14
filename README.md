@@ -35,37 +35,37 @@ Chaque étape est une commande indépendante (un skill Claude Code), invocable s
 
 ## Les étapes en détail
 
-### 1. `/cours-condense` — Génération du cours condensé
+### 1. `/cours-condense` — Génération du cours condensé — **opérationnel**
 `/cours-condense <chemin_vers_livre.pdf> [checkpoint=false]`
 
 Lit le livre source **intégralement** (jamais un extrait) et produit un support de cours condensé en français, compilé en PDF via LaTeX. Le texte est réécrit dans un ton pédagogique fidèle à l'auteur, le code source est repris à l'identique (jamais reformulé), et des illustrations vectorielles originales sont créées pour appuyer les explications. Aucune longueur cible n'est fixée à l'avance : le plan et la compression découlent uniquement du contenu réellement essentiel du livre.
 
-### 2. `/rag-extraction` — Conversion en markdown pivot
+### 2. `/rag-extraction` — Conversion en markdown pivot — **en cours de développement**
 `/rag-extraction <chemin_vers_pdf_condense>`
 
 Convertit le PDF condensé (sortie de l'étape 1) en un markdown "pivot" qui distingue proprement titres, code et prose, et extrait les images natives du PDF. Une réparation automatique des ligatures typographiques cassées (ex. "ﬁ", "ﬂ") est appliquée si nécessaire. Traite aussi la détection de formules mathématiques mal ordonnées par l'extraction PDF brute.
 
-### 3. `/rag-images` — Description et OCR des images
+### 3. `/rag-images` — Description et OCR des images — **en cours de développement**
 `/rag-images <pdf_condense_ou_document_id>`
 
 Pour chaque image extraite à l'étape 2 : classification automatique (formule mathématique vs image générale), description en langage naturel, OCR adapté (LaTeX pour les formules, texte pour le reste), renommage explicite du fichier, puis injection de ce contenu dans le markdown pivot. Sans cette étape, une image reste une simple référence de fichier invisible à la recherche vectorielle.
 
-### 4. `/rag-chunking` — Découpage en chunks
+### 4. `/rag-chunking` — Découpage en chunks — **en cours de développement**
 `/rag-chunking <pdf_condense_ou_document_id>`
 
 Découpe le markdown pivot enrichi en chunks d'environ 400 tokens (avec recouvrement), sans jamais couper un bloc de code ou une image au milieu. Étape purement déterministe (basée sur `tiktoken`), aucun appel à un modèle de langage.
 
-### 5. `/rag-index` — Indexation vectorielle
+### 5. `/rag-index` — Indexation vectorielle — **en cours de développement**
 `/rag-index <pdf_condense_ou_document_id>`
 
 Calcule les embeddings de chaque chunk (modèle multilingue local via `fastembed`, sans clé API externe) et les indexe dans une base vectorielle Chroma partagée entre tous les documents du corpus. Les chunks de texte "bruité" (motifs mal extraits d'un diagramme) sont filtrés automatiquement.
 
-### 6. `/rag-concepts` — Extraction des concepts
+### 6. `/rag-concepts` — Extraction des concepts — **en cours de développement**
 `/rag-concepts <pdf_condense_ou_document_id>`
 
 Pour chaque chunk indexable, un appel `claude -p` headless extrait 3 à 8 concepts significatifs (nom, forme canonique, type). Cette étape prépare la construction du graphe de connaissances de l'étape suivante.
 
-### 7. `/rag-graphe` — Construction du graphe de connaissances (GraphRAG)
+### 7. `/rag-graphe` — Construction du graphe de connaissances (GraphRAG) — **en cours de développement**
 `/rag-graphe <pdf_condense_ou_document_id>`
 
 Résout chaque concept extrait en comparant sa similarité d'embedding aux concepts déjà connus du graphe (commun à tout le corpus) :
