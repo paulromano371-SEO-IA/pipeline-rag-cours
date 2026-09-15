@@ -1,8 +1,11 @@
 """Client partagé pour les appels `claude -p` headless (sans outils ni MCP).
 
-Utilisé par `ligature_repair.py`, `concepts.py` et `entity_resolution.py`,
-pour ne pas dupliquer la construction de commande, la gestion d'erreur du
-sous-processus et le parsing JSON dans chacun.
+Utilisé par `concepts.py` et `entity_resolution.py`, pour ne pas dupliquer la
+construction de commande, la gestion d'erreur du sous-processus et le
+parsing JSON dans chacun. (`ligature_repair.py` utilisait aussi ce client,
+mais résout désormais les ligatures par dictionnaire français hors ligne —
+déterministe et sans le risque de contention/timeout d'un appel `claude -p`
+imbriqué, voir sa docstring.)
 """
 
 from __future__ import annotations

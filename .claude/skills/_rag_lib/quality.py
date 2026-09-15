@@ -20,12 +20,36 @@ LOW_TEXT_DENSITY_THRESHOLD = 40
 NOISE_ALPHA_RATIO_THRESHOLD = 0.3
 NOISE_MIN_LENGTH = 60
 
+# Seul type que ce module corrige lui-meme (voir /rag-extraction:
+# auto_repair_ligatures, appele des qu'une occurrence est detectee) — jamais
+# bloquant, contrairement aux autres types que ce module se contente de
+# signaler sans les corriger. Fixe ici, jamais laisse a l'appreciation de
+# l'appelant (le detail exact d'un des types "bloquant par defaut" reste
+# ouvert a une exception cas par cas justifiee explicitement, mais la valeur
+# PAR DEFAUT ne doit jamais dependre d'une relecture du texte de ce module).
+_NEVER_BLOCKING_KINDS = {"control_char_ligature"}
+
+
+def _is_blocking_by_default(kind: str) -> bool:
+    return kind not in _NEVER_BLOCKING_KINDS
+
 
 @dataclass
 class QualityIssue:
     page_number: int
     kind: str
     detail: str
+    # Calcule automatiquement depuis `kind` si non fourni explicitement —
+    # aucun appelant existant n'a besoin d'etre modifie pour en beneficier.
+    # Ne le fixe explicitement que pour une exception cas par cas justifiee
+    # (voir SKILL.md de /rag-extraction) ; jamais pour reproduire la valeur
+    # par defaut, qui reste toujours calculee ici, au meme endroit, jamais
+    # eparpillee dans le texte d'un skill.
+    blocking: bool | None = None
+
+    def __post_init__(self) -> None:
+        if self.blocking is None:
+            self.blocking = _is_blocking_by_default(self.kind)
 
 
 @dataclass
@@ -35,6 +59,14 @@ class QualityReport:
     @property
     def ok(self) -> bool:
         return not self.issues
+
+    @property
+    def blocking_issues(self) -> list[QualityIssue]:
+        return [i for i in self.issues if i.blocking]
+
+    @property
+    def indicative_issues(self) -> list[QualityIssue]:
+        return [i for i in self.issues if not i.blocking]
 
     def pages_needing_review(self) -> set[int]:
         return {issue.page_number for issue in self.issues}

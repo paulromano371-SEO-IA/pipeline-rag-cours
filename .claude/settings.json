@@ -1,0 +1,28 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"C:\\Users\\xppx_\\Documents\\AVENIR\\Livres\\MesSupportsDeCours\\.claude\\hooks\\block_rag_background.py\"",
+            "timeout": 10,
+            "statusMessage": "Verification pipeline RAG (foreground obligatoire)"
+          }
+        ]
+      },
+      {
+        "matcher": "Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"C:\\Users\\xppx_\\Documents\\AVENIR\\Livres\\MesSupportsDeCours\\.claude\\hooks\\block_rag_extraction_subagent_read.py\"",
+            "timeout": 10,
+            "statusMessage": "Verification pivot.md (lecture directe obligatoire)"
+          }
+        ]
+      }
+    ]
+  }
+}

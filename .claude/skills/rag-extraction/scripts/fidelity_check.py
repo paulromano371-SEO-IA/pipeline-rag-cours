@@ -76,7 +76,6 @@ class FidelityReport:
     n_code_blocks_verified: int = 0
     n_formulas_expected: int = 0
     n_formulas_verified_exact: int = 0
-    n_formulas_as_image: int = 0
     n_headings_expected: int = 0
     n_headings_verified: int = 0
     n_code_blocks_syntax_checked: int = 0
@@ -105,6 +104,7 @@ def _normalize_code(text: str) -> str:
 
 def check_illustrations(
     illustrations_dir: Path, pivot_text: str, images_dir: Path, illustrations_from_source: bool,
+    *, course_tex_illustrations: frozenset[str] = frozenset(),
 ) -> tuple[list[FidelityIssue], int, int]:
     """`illustrations_from_source` doit venir de
     `ExtractionResult.illustrations_from_source` (voir `convert.py`) : si
@@ -116,14 +116,37 @@ def check_illustrations(
     absent, donnant des faux BLOQUANT à chaque bascule sur ce repli). Dans
     ce cas, seul un contrôle de VOLUME (comptage) est possible ici, en
     indicatif — l'identité par nom exact reste hors de portée sans
-    redescendre au niveau de `convert.py`."""
+    redescendre au niveau de `convert.py`.
+
+    `course_tex_illustrations` (noms de base extraits des `\\includegraphics`
+    de `course.tex` par `extract_illustration_basenames`, voir
+    `run_fidelity_check`) permet de distinguer, pour un fichier présent dans
+    `illustrations/` mais absent de `pivot.md`, deux causes distinctes :
+    un vrai défaut de `/rag-extraction` (le fichier EST inséré dans
+    `course.tex` mais n'a pas été repris), ou un fichier que
+    `/cours-condense` lui-même n'a jamais inséré dans `course.tex` — dans ce
+    second cas, `/rag-extraction` n'a structurellement aucune chance de le
+    reprendre (il n'existe nulle part dans le PDF compilé), donc **non
+    bloquant** ici, même principe que `check_figure_captions` pour une
+    régression amont : jamais à corriger côté `/rag-extraction`."""
     if not illustrations_dir.exists():
         return [], 0, 0
     files = sorted(p.name for p in illustrations_dir.glob("*.png"))
     issues: list[FidelityIssue] = []
 
     if not illustrations_from_source:
-        n_images = len(list(images_dir.glob("*"))) if images_dir.exists() else 0
+        # Exclut les rasterisations de formule (page_NNN_formula_NN.png,
+        # voir convert.py) du comptage : ce sont des crops de texte
+        # mathematique, jamais des illustrations, et elles partagent le
+        # meme images_dir des que course.tex/tex_segments sont indisponibles
+        # — exactement le cas ou ce comptage de repli s'active. Sans ce
+        # filtre, des formules rasterisees gonflaient artificiellement le
+        # compte et masquaient de vraies illustrations manquantes (bug
+        # trouve en revue de code).
+        n_images = (
+            sum(1 for p in images_dir.glob("*") if "_formula_" not in p.name)
+            if images_dir.exists() else 0
+        )
         if n_images < len(files):
             issues.append(FidelityIssue(
                 "illustration", False,
@@ -141,10 +164,18 @@ def check_illustrations(
         if referenced and on_disk:
             verified += 1
         elif not referenced:
-            issues.append(FidelityIssue(
-                "illustration", True,
-                f"'{name}' présente dans illustrations/ mais absente de pivot.md (jamais référencée)",
-            ))
+            if course_tex_illustrations and name not in course_tex_illustrations:
+                issues.append(FidelityIssue(
+                    "illustration", False,
+                    f"'{name}' présente dans illustrations/ mais jamais insérée dans course.tex "
+                    f"lui-même (aucun \\includegraphics) — défaut de /cours-condense, pas de "
+                    f"/rag-extraction",
+                ))
+            else:
+                issues.append(FidelityIssue(
+                    "illustration", True,
+                    f"'{name}' présente dans illustrations/ mais absente de pivot.md (jamais référencée)",
+                ))
         else:
             issues.append(FidelityIssue(
                 "illustration", True,
@@ -214,24 +245,24 @@ def check_code_blocks(course_tex_path: Path, pivot_text: str) -> tuple[list[Fide
     return issues, len(expected_blocks), verified
 
 
-def check_formulas(course_tex_path: Path, pivot_text: str, images_dir: Path) -> tuple[list[FidelityIssue], int, int, int]:
-    """`images_dir` n'est plus utilisé pour décider de la sévérité : quand
-    `course_tex_path` existe (seul cas où cette fonction fait plus que
-    retourner tôt — voir `run_fidelity_check`), `convert.py` ne rasterise
-    JAMAIS plus une formule non appariée, il la redescend systématiquement
-    en prose (voir `_materialize_formula_runs_as_prose_fallback`) — donc
-    aucune image `*_formula_*.png` n'existe jamais dans ce cas précis, et un
-    budget d'images à consommer n'aurait plus aucun sens ici (c'était un
-    reliquat d'un comportement antérieur, corrigé par revue de code : cette
-    fonction traitait alors à tort le cas "pas d'image restante" comme un
-    BLOQUANT "perte de contenu probable", alors que le contenu est en
-    réalité toujours présent — juste en prose approximative, jamais
-    verbatim). Toute formule non retrouvée verbatim ici est donc désormais
-    **indicative**, jamais bloquante : c'est une dégradation connue et
-    acceptée (formule trop large pour `_FORMULA_MAX_WIDTH`, ou run PDF non
-    apparié avec confiance), pas une perte silencieuse."""
+def check_formulas(course_tex_path: Path, pivot_text: str) -> tuple[list[FidelityIssue], int, int]:
+    """Quand `course_tex_path` existe (seul cas où cette fonction fait plus
+    que retourner tôt — voir `run_fidelity_check`), `convert.py` ne
+    rasterise JAMAIS une formule non appariée, il la redescend
+    systématiquement en prose (voir
+    `_materialize_formula_runs_as_prose_fallback`) — donc aucune image
+    `*_formula_*.png` n'existe jamais dans ce cas précis (cette fonction
+    prenait autrefois `images_dir` pour vérifier un reliquat d'un
+    comportement antérieur, retiré par revue de code : elle traitait alors
+    à tort le cas "pas d'image restante" comme un BLOQUANT "perte de
+    contenu probable", alors que le contenu est en réalité toujours présent
+    — juste en prose approximative, jamais verbatim). Toute formule non
+    retrouvée verbatim ici est donc **indicative**, jamais bloquante : c'est
+    une dégradation connue et acceptée (formule trop large pour
+    `_FORMULA_MAX_WIDTH`, ou run PDF non apparié avec confiance), pas une
+    perte silencieuse."""
     if not course_tex_path.exists():
-        return [], 0, 0, 0
+        return [], 0, 0
     tex = course_tex_path.read_text(encoding="utf-8")
     segments = extract_display_segments(tex)
 
@@ -248,7 +279,7 @@ def check_formulas(course_tex_path: Path, pivot_text: str, images_dir: Path) -> 
                 f"— convertie en prose approximative (formule trop large ou non appariée avec confiance), "
                 f"à vérifier manuellement si son contenu exact importe",
             ))
-    return issues, len(segments), verified_exact, 0
+    return issues, len(segments), verified_exact
 
 
 _SECTION_NUMBER_PREFIX_RE = re.compile(r"^\d+(?:\.\d+)*\s+")
@@ -270,6 +301,25 @@ def _normalize_heading(text: str) -> str:
     # fois rendu dans le PDF — sans ce retrait, tout titre l'utilisant
     # (frequent en francais) se faisait a tort signaler absent.
     text = text.replace("~", " ")
+    # "\og"/"\fg{}" (guillemets francais, babel-french) : deja retires par
+    # _COMMAND_RE (commandes) et le remplacement des accolades ci-dessus, le
+    # texte source ne porte donc plus aucune marque de guillemet a ce stade.
+    # Le rendu PDF, lui, porte les vrais caracteres « / » (extraits tels
+    # quels depuis pivot.md) — sans ce retrait cote pivot.md aussi, plus
+    # aucun titre a guillemets ne matchait (l'inverse du probleme "$...$"
+    # juste en dessous : ici c'est le cote pivot.md qui porte un caractere
+    # que le cote course.tex n'a plus).
+    text = text.replace("«", " ").replace("»", " ")
+    # "$...$" (mode mathematique inline, ex. "estimer $f$") : pdflatex rend
+    # le contenu (ici "f", en italique) mais jamais les symboles dollar
+    # eux-memes — un titre source gardant "$f$" ne matchait donc jamais son
+    # rendu PDF "f" sans ce retrait (verifie empiriquement : 7 titres a tort
+    # signales absents sur un document a fort contenu mathematique, alors
+    # que pivot.md les portait deja correctement). Simple retrait des
+    # symboles $ (pas d'interpretation LaTeX du contenu interne) : suffisant
+    # ici, les titres de chapitre/section ne contiennent jamais de maths
+    # plus complexes qu'une variable isolee.
+    text = text.replace("$", "")
     return re.sub(r"\s+", " ", text).strip().lower()
 
 
@@ -353,7 +403,8 @@ def check_figure_captions(course_tex_path: Path) -> tuple[list[FidelityIssue], i
 
 
 def run_fidelity_check(
-    pivot_path: Path, images_dir: Path, courscondense_dir: Path, *, illustrations_from_source: bool = True,
+    pivot_path: Path, images_dir: Path, courscondense_dir: Path, *,
+    illustrations_from_source: bool = True, page_range_active: bool = False,
 ) -> FidelityReport:
     """Point d'entrée unique, appelé par `/rag-extraction` juste après avoir
     écrit `pivot.md`. `courscondense_dir` peut ne pas exister (dossier de
@@ -367,7 +418,15 @@ def run_fidelity_check(
     sémantiques de `illustrations/` dans `pivot.md` même quand `convert.py`
     est retombé sur l'extraction native à noms opaques, et signalerait
     alors TOUTES les illustrations comme manquantes à tort (bug trouvé en
-    revue de code)."""
+    revue de code).
+
+    `page_range_active=True` (l'appelant a utilisé `--pages`) désactive de
+    la même façon que `convert.py` (voir son paramètre `page_range`) toute
+    comparaison à `course.tex` : `pivot.md` ne couvre alors qu'un
+    sous-ensemble de pages, jamais le livre entier, donc comparer ce
+    sous-ensemble à la totalité de `course.tex` inonderait le rapport de
+    faux BLOQUANT (titres/blocs de code/illustrations hors de la plage
+    demandée, jamais réellement manquants) — bug trouvé en revue de code."""
     pivot_text = pivot_path.read_text(encoding="utf-8")
     report = FidelityReport()
 
@@ -377,14 +436,23 @@ def run_fidelity_check(
     report.issues += syntax_issues
     report.n_code_blocks_syntax_checked, report.n_code_blocks_syntax_valid = n_syntax_checked, n_syntax_valid
 
+    if page_range_active:
+        report.skipped = True
+        return report
+
     course_tex_path = courscondense_dir / "course.tex"
     illustrations_dir = courscondense_dir / "illustrations"
     if not courscondense_dir.exists():
         report.skipped = True
         return report
 
+    course_tex_illustrations = frozenset(
+        extract_illustration_basenames(course_tex_path.read_text(encoding="utf-8"))
+    ) if course_tex_path.exists() else frozenset()
+
     illus_issues, n_illus_exp, n_illus_ver = check_illustrations(
         illustrations_dir, pivot_text, images_dir, illustrations_from_source,
+        course_tex_illustrations=course_tex_illustrations,
     )
     report.issues += illus_issues
     report.n_illustrations_expected, report.n_illustrations_verified = n_illus_exp, n_illus_ver
@@ -393,11 +461,10 @@ def run_fidelity_check(
     report.issues += code_issues
     report.n_code_blocks_expected, report.n_code_blocks_verified = n_code_exp, n_code_ver
 
-    formula_issues, n_f_exp, n_f_ver, n_f_img = check_formulas(course_tex_path, pivot_text, images_dir)
+    formula_issues, n_f_exp, n_f_ver = check_formulas(course_tex_path, pivot_text)
     report.issues += formula_issues
     report.n_formulas_expected = n_f_exp
     report.n_formulas_verified_exact = n_f_ver
-    report.n_formulas_as_image = n_f_img
 
     heading_issues, n_head_exp, n_head_ver = check_section_headings(course_tex_path, pivot_text)
     report.issues += heading_issues

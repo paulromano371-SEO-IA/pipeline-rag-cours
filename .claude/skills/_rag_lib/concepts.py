@@ -1,6 +1,6 @@
 """Extraction de concepts par chunk (prépare la construction du graphe).
 
-Même mécanisme headless que `ligature_repair.py` : un appel `claude -p` sans
+Même mécanisme headless qu'`entity_resolution.py` : un appel `claude -p` sans
 outils ni MCP, pour rester cohérent avec le choix d'éviter une clé API
 facturée à l'usage.
 """

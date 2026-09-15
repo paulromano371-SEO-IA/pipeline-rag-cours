@@ -31,12 +31,25 @@ import pymupdf
 
 import difflib
 
+from spellchecker import SpellChecker
+
 from tex_source import extract_display_segments, extract_illustration_basenames
 
 _MAX_HEADING_LEVELS = 4
 _CODE_FONT_MIN_SAMPLES = 20
 _CODE_FONT_MAX_CV = 0.20
-_CODE_LINE_MIN_RATIO = 0.6
+_CODE_LINE_MIN_RATIO = 0.9
+# Une vraie ligne de code (une fois un eventuel numero de ligne retire) est
+# quasi-integralement en police(s) a chasse fixe — verifie empiriquement,
+# ratio 1.0 dans tous les cas observes. Un ratio bas plus permissif (0.6)
+# laissait passer un faux positif : la fin d'une phrase de prose repliee sur
+# sa propre ligne PDF, contenant un seul mot en `\texttt{...}` assez long
+# pour depasser 60% des caracteres de cette ligne precise (verifie
+# empiriquement : "l'aide de Html2TextTransformer :", ratio 0.636), fusionnee
+# a tort avec le bloc de code reel qui suivait (_merge_contiguous_code_runs
+# ne s'arrete qu'aux elements non-code). Une marge large (0.9) reste
+# confortable sous le ratio 1.0 du vrai code tout en rejetant ce cas.
+
 
 # pdflatex (sans le package `upquote`) substitue les apostrophes/guillemets
 # droits du code source par leurs equivalents typographiques courbes a la
@@ -52,6 +65,31 @@ _CURLY_QUOTES = {
     "“": '"', "”": '"',
 }
 _LINE_NUMBER_RE = re.compile(r"^\d{1,4}$")
+
+# Dictionnaire français hors ligne, même mécanisme que
+# `ligature_repair.py` — utilisé pour distinguer une césure automatique de
+# fin de ligne pdflatex (trait d'union purement typographique, à retirer)
+# d'un vrai mot composé qui tomberait par coïncidence sur la même frontière
+# de ligne (trait d'union à conserver), voir `_join_wrapped_lines`.
+_spell = SpellChecker(language="fr")
+_LETTERS_RE = r"[^\W\d_]"
+_HYPHENATION_BREAK_RE = re.compile(rf"({_LETTERS_RE}+)-$")
+_WORD_START_RE = re.compile(rf"^({_LETTERS_RE}+)")
+
+# Espaces/tabulations/retours a la ligne ASCII usuels — jamais `str.strip()`
+# nu, ni `\s` dans une regex sur du texte issu du PDF : Python (et le module
+# `re`) traite aussi U+001C-U+001F ("separateurs d'information" ASCII) comme
+# des espaces (propriete Unicode White_Space, heritee de leur usage
+# historique), alors que ce sont exactement des codes de police candidats a
+# etre une ligature cassee (ff/fi/fl/ffi/ffl — voir ligature_repair.py, le
+# code de controle depend de la police, aucun standard fixe). Un `.strip()`
+# nu en tete/fin d'un titre, d'une ligne de code ou de prose supprimerait
+# alors silencieusement la ligature avant meme d'atteindre la reparation —
+# verifie empiriquement (un titre de chapitre commencant par la ligature
+# "fi" perdait purement et simplement son premier caractere : "fidélité" ->
+# "délité"). Utiliser cette liste explicite plutot que `\s`/`.strip()` nu
+# partout ou du texte extrait du PDF est manipule.
+_STRIP_CHARS = " \t\n\r"
 
 # Polices mathématiques standard de la distribution TeX (Computer Modern),
 # utilisées par pdflatex par défaut avec amsmath/amssymb/amsfonts — le
@@ -163,7 +201,7 @@ def _heading_level_map(pages_raw: dict[int, dict]) -> dict[float, int]:
                 continue
             for line in block["lines"]:
                 for span in line["spans"]:
-                    if _span_text(span).strip():
+                    if _span_text(span).strip(_STRIP_CHARS):
                         sizes.append(round(span["size"], 1))
 
     if not sizes:
@@ -368,7 +406,7 @@ def _classify_line_number_fonts(
                 continue
             for line in block["lines"]:
                 for span in line["spans"]:
-                    text = _span_text(span).strip()
+                    text = _span_text(span).strip(_STRIP_CHARS)
                     if not text:
                         continue
                     font = span["font"]
@@ -441,13 +479,13 @@ def _line_to_element(
         # chuter un score de similarité à peine sous un seuil strict alors
         # que le code lui-même est identique (vérifié empiriquement, voir
         # `fidelity_check.py` : un bloc pourtant identique scorait 57%).
-        if removed_leading_number and spans and spans[0]["text"].strip() == "":
+        if removed_leading_number and spans and spans[0]["text"].strip(_STRIP_CHARS) == "":
             spans = spans[1:]
-    if not any(s["text"].strip() for s in spans):
+    if not any(s["text"].strip(_STRIP_CHARS) for s in spans):
         return None
 
     y = line["bbox"][1]
-    non_space_spans = [s for s in spans if s["text"].strip()]
+    non_space_spans = [s for s in spans if s["text"].strip(_STRIP_CHARS)]
     max_size = max((round(s["size"], 1) for s in non_space_spans), default=0.0)
     heading_level = heading_map.get(max_size)
 
@@ -456,7 +494,7 @@ def _line_to_element(
     is_code_line = not heading_level and total_chars > 0 and code_chars / total_chars > _CODE_LINE_MIN_RATIO
 
     if not heading_level and not is_code_line and _is_formula_line(non_space_spans):
-        text = "".join(s["text"] for s in spans).strip()
+        text = "".join(s["text"] for s in spans).strip(_STRIP_CHARS)
         if not text:
             return None
         # group_id unique par ligne (pas block_id) : une meme formule peut
@@ -473,9 +511,9 @@ def _line_to_element(
         # police plus haut si `line_number_fonts` était fourni ; ce test
         # texte reste une seconde barrière pour l'appelant historique qui
         # n'en fournirait pas), ainsi que le séparateur qui le sépare du code.
-        if len(code_spans) > 1 and _LINE_NUMBER_RE.match(code_spans[0]["text"].strip()):
+        if len(code_spans) > 1 and _LINE_NUMBER_RE.match(code_spans[0]["text"].strip(_STRIP_CHARS)):
             code_spans = code_spans[1:]
-            if code_spans and code_spans[0]["text"].strip() == "":
+            if code_spans and code_spans[0]["text"].strip(_STRIP_CHARS) == "":
                 code_spans = code_spans[1:]
         # rstrip() seulement : ne jamais tronquer le contenu. L'indentation
         # PYTHON N'EST PAS faite de vrais caractères espace en tête de ligne
@@ -489,7 +527,7 @@ def _line_to_element(
         # (appelée après le regroupement des blocs contigus, une fois la
         # référence d'indentation du bloc entier connue) utilise pour la
         # reconstruire a posteriori.
-        text = "".join(s["text"] for s in code_spans).rstrip()
+        text = "".join(s["text"] for s in code_spans).rstrip(_STRIP_CHARS)
         for curly, straight in _CURLY_QUOTES.items():
             text = text.replace(curly, straight)
         if not text:
@@ -504,7 +542,7 @@ def _line_to_element(
         return _Element(y=y, kind="code", group_id=block_id, text=text, bbox=bbox)
 
     if heading_level:
-        text = "".join(s["text"] for s in spans).strip()
+        text = "".join(s["text"] for s in spans).strip(_STRIP_CHARS)
         if not text:
             return None
         # group_id = block_id (pas un id unique par ligne) pour qu'un titre
@@ -533,7 +571,7 @@ def _line_to_element(
         t = s["text"]
         if not t:
             continue
-        if t.strip() == "":
+        if t.strip(_STRIP_CHARS) == "":
             _flush()
             parts.append(t)
             continue
@@ -544,10 +582,80 @@ def _line_to_element(
         buffer_is_code = is_code_span
     _flush()
 
-    text = "".join(parts).strip()
+    text = "".join(parts).strip(_STRIP_CHARS)
     if not text:
         return None
     return _Element(y=y, kind="prose", group_id=block_id, text=text, bbox=tuple(line["bbox"]))
+
+
+_CODE_TRAILING_COMMENT_Y_TOLERANCE = 3.0
+# points ; un commentaire de fin de ligne (`code  # commentaire`) rendu par
+# `listings` dans une police/couleur differente du code qu'il commente peut
+# atterrir, cote PyMuPDF, comme une "ligne" separee de celle du code — avec
+# un ecart vertical quasi nul (0 a 1.8pt observes empiriquement sur un
+# changement de police Roman -> Oblique) — tres inferieur a l'ecart normal
+# entre deux vraies lignes de code consecutives (~9-10pt observes sur le
+# meme document). Sans fusion, ce commentaire atterrit sur sa propre ligne
+# Markdown au lieu de rester a la fin de celle qu'il commente (verifie
+# empiriquement : `chunk_overlap=200,` puis `# nombre de caracteres...` sur
+# deux lignes separees du bloc de code rendu).
+
+
+def _merge_code_trailing_comments(elements: list[_Element]) -> list[_Element]:
+    """Fusionne un element `code` avec le precedent quand les deux sont a la
+    meme hauteur (a la tolerance pres) et du meme groupe : signe qu'il
+    s'agit d'un commentaire de fin de ligne separe a tort en une "ligne"
+    PyMuPDF distincte, jamais une vraie ligne de code suivante (voir
+    constante ci-dessus). Opere sur les elements dans leur ordre de
+    construction (ordre de lecture du bloc PDF d'origine), avant tout
+    tri/regroupement ulterieur — necessaire car ce doublon de hauteur
+    fausserait sinon l'ecart vertical typique dont depend la detection des
+    lignes vides internes (`_insert_blank_code_lines`)."""
+    merged: list[_Element] = []
+    for el in elements:
+        if (
+            el.kind == "code"
+            and merged
+            and merged[-1].kind == "code"
+            and merged[-1].group_id == el.group_id
+            and abs(el.y - merged[-1].y) <= _CODE_TRAILING_COMMENT_Y_TOLERANCE
+        ):
+            prev = merged[-1]
+            merged[-1] = _Element(
+                y=prev.y, kind="code", group_id=prev.group_id,
+                text=prev.text + "  " + el.text, bbox=prev.bbox,
+            )
+            continue
+        merged.append(el)
+    return merged
+
+
+def _join_wrapped_lines(texts: list[str]) -> str:
+    """Joint les fragments de lignes PDF d'un même titre/paragraphe avec un
+    espace — sauf quand le fragment courant se termine par un mot suivi d'un
+    trait d'union et que recoller les deux fragments SANS le trait d'union
+    ni l'espace forme un mot français valide (dictionnaire hors ligne, même
+    mécanisme que `ligature_repair.py`) : signe d'une césure automatique de
+    pdflatex en fin de ligne (le trait d'union n'est alors qu'un artefact de
+    mise en page, jamais un vrai trait d'union du mot) — vérifié
+    empiriquement ("exploration" coupé en "ex-" / "ploration" par un retour
+    à la ligne). Un vrai mot composé (ex. "auto-encodeur") qui tomberait par
+    coïncidence sur la même frontière de ligne reste inchangé, puisque la
+    forme fusionnée sans trait d'union n'est alors pas un mot du
+    dictionnaire."""
+    if not texts:
+        return ""
+    result = texts[0]
+    for nxt in texts[1:]:
+        m_end = _HYPHENATION_BREAK_RE.search(result)
+        m_start = _WORD_START_RE.match(nxt)
+        if m_end and m_start:
+            merged_word = m_end.group(1) + m_start.group(1)
+            if merged_word.lower() in _spell:
+                result = result[: m_end.start(1)] + merged_word + nxt[m_start.end(1):]
+                continue
+        result = result + " " + nxt
+    return result
 
 
 def _render_group(kind: str, elements: list[_Element]) -> str:
@@ -556,9 +664,9 @@ def _render_group(kind: str, elements: list[_Element]) -> str:
         return "```\n" + "\n".join(texts) + "\n```"
     if kind == "heading":
         level = elements[0].heading_level or 1
-        return f"{'#' * level} " + " ".join(texts)
+        return f"{'#' * level} " + _join_wrapped_lines(texts)
     if kind == "prose":
-        return " ".join(texts)
+        return _join_wrapped_lines(texts)
     return "\n".join(texts)  # image : une entrée par ligne
 
 
@@ -672,7 +780,7 @@ def _group_formula_runs(elements: list[_Element]) -> tuple[list[_Element], list[
             # sans exception : c'est cette meme regle qui evite de fusionner
             # a tort des mentions separees par une phrase complete.
             if (
-                len(candidate.text.strip()) <= 3
+                len(candidate.text.strip(_STRIP_CHARS)) <= 3
                 and j + 1 < len(ordered)
                 and ordered[j + 1].kind == "formula"
             ):
@@ -747,15 +855,6 @@ def _materialize_formula_runs_as_images(
 
 
 _ANCHOR_SIMILARITY_THRESHOLD = 0.5
-# Nombre de formules source regardees en avance du pointeur courant pour
-# retrouver un appariement — voir match_formula_runs_to_tex : sans cette
-# fenetre, une SEULE formule source jamais detectee comme run isole cote PDF
-# (ex. ecartee par _FORMULA_MAX_WIDTH avant meme d'atteindre cette fonction)
-# bloquait le pointeur indefiniment, desynchronisant l'appariement de TOUTES
-# les formules suivantes du document (verifie par revue de code — bug reel,
-# jamais declenche sur les livres testes uniquement parce que la formule
-# ecartee s'y trouvait par coincidence en toute derniere position).
-_ANCHOR_LOOKAHEAD = 3
 
 
 def _normalize_pdf_text(text: str) -> str:
@@ -764,8 +863,12 @@ def _normalize_pdf_text(text: str) -> str:
     `extract_display_segments()` (course.tex) : espaces/casse seulement — les
     artefacts de ligature mal encodee (caracteres de controle, voir
     `/rag-extraction`) restent en l'etat, la comparaison par similarite
-    (`difflib`) les tolere sans qu'il soit necessaire de les reparer ici."""
-    return re.sub(r"\s+", " ", text).strip().lower()
+    (`difflib`) les tolere sans qu'il soit necessaire de les reparer ici.
+    Classe explicite `[ \\t\\n\\r]` plutot que `\\s` : ce dernier traite
+    aussi U+001C-U+001F comme des espaces (voir `_STRIP_CHARS`) et les
+    aurait fait disparaitre ici, contrairement a ce que dit le paragraphe
+    ci-dessus."""
+    return re.sub(r"[ \t\n\r]+", " ", text).strip(_STRIP_CHARS).lower()
 
 
 def _anchor_similarity(a: str, b: str) -> float:
@@ -779,16 +882,18 @@ def match_formula_runs_to_tex(
     tex_segments: list[dict],
     *,
     threshold: float = _ANCHOR_SIMILARITY_THRESHOLD,
-    lookahead: int = _ANCHOR_LOOKAHEAD,
 ) -> dict[int, str]:
-    """Apparie, dans l'ordre de lecture du document entier, chaque run
-    detecte dans le PDF a la formule de `course.tex` dont le contexte de
-    prose voisin (avant/apres, voir `extract_display_segments`) lui
-    ressemble le plus.
+    """Apparie chaque run detecte dans le PDF a la formule de `course.tex`
+    dont le contexte de prose voisin (avant/apres, voir
+    `extract_display_segments`) lui ressemble le plus.
 
-    Alignement glouton a fenetre glissante plutot qu'un comptage global : les
-    deux sequences (runs PDF, formules source) partagent le meme ordre de
-    lecture, mais PAS le meme nombre d'elements — dans les deux sens :
+    Appariement GLOBAL (chaque run cherche sa meilleure correspondance parmi
+    TOUTES les formules source non encore utilisees), plutot qu'un pointeur
+    sequentiel meme a fenetre glissante — meme principe que
+    `fidelity_check.check_code_blocks` (voir son commentaire dedie sur ce
+    choix). Necessaire car les deux sequences (runs PDF, formules source)
+    partagent le meme ordre de lecture mais PAS le meme nombre d'elements,
+    dans les deux sens :
     - un fragment d'indice/exposant d'une formule INLINE peut se faire
       classifier a tort comme un run "isole" cote PDF (verifie
       empiriquement), sans aucun equivalent cote source (plus de runs que de
@@ -797,49 +902,44 @@ def match_formula_runs_to_tex(
       PDF (ex. ecartee par `_FORMULA_MAX_WIDTH` avant meme d'atteindre cette
       fonction — plus de formules que de runs exploitables a cet endroit).
 
-    Le second cas exige de regarder plusieurs formules source EN AVANCE du
-    pointeur courant (`lookahead`), pas seulement celle actuellement pointee :
-    un pointeur a avancement strict (une seule formule regardee a la fois)
-    reste bloque indefiniment des qu'une formule n'a aucun run correspondant,
-    et desynchronise alors l'appariement de TOUTES les formules suivantes du
-    document (bug reel trouve en revue de code — jamais declenche sur les
-    livres testes cette session uniquement parce que la formule ecartee s'y
-    trouvait par coincidence en derniere position, sans rien apres elle a
-    desynchroniser).
+    Une version anterieure utilisait un pointeur a fenetre glissante de
+    taille fixe (regarder N formules en avance) : bug trouve en revue de
+    code — au-dela de N formules source consecutives sans run correspondant,
+    le pointeur restait bloque et desynchronisait tout le reste du document,
+    exactement comme la version a pointeur strict qu'il visait a corriger,
+    juste avec un seuil plus haut avant de se declencher. La recherche
+    globale n'a structurellement pas ce mode d'echec : chaque run trouve sa
+    vraie meilleure correspondance ou aucune, quel que soit le nombre de
+    formules sans run intercalees, sans jamais dependre d'une taille de
+    fenetre arbitraire.
 
     Retourne `{id(run): latex_de_la_formule}` — un run absent de ce dict n'a
     trouve aucune correspondance fiable et doit etre traite individuellement
     par l'appelant (voir `extract_native_pdf`), jamais comme une erreur
     bloquante."""
     matches: dict[int, str] = {}
-    seg_idx = 0
+    used = [False] * len(tex_segments)
     for run in runs_in_order:
-        if seg_idx >= len(tex_segments):
-            break
         preceding = _normalize_pdf_text(run.preceding_text)
         following = _normalize_pdf_text(run.following_text)
 
-        best_j, best_score = None, 0.0
-        window_end = min(seg_idx + lookahead, len(tex_segments))
-        for j in range(seg_idx, window_end):
-            seg = tex_segments[j]
+        best_idx, best_score = None, 0.0
+        for idx, seg in enumerate(tex_segments):
+            if used[idx]:
+                continue
             score = max(
                 _anchor_similarity(seg["prefix_tail"], preceding),
                 _anchor_similarity(seg["suffix_head"], following),
             )
             if score >= threshold and score > best_score:
-                best_score, best_j = score, j
+                best_score, best_idx = score, idx
 
-        if best_j is not None:
-            matches[id(run)] = tex_segments[best_j]["formula"]
-            # avance au-dela de la formule appariee — saute silencieusement
-            # toute formule intermediaire jamais detectee cote PDF (cas
-            # decrit ci-dessus), plutot que de rester bloque dessus.
-            seg_idx = best_j + 1
-        # sinon : ce run ne correspond a aucune formule source dans la
-        # fenetre regardee (probablement un fragment d'indice/exposant isole
-        # a tort) — on le laisse sans correspondance et on retente la meme
-        # fenetre contre le run suivant, sans avancer seg_idx.
+        if best_idx is not None:
+            used[best_idx] = True
+            matches[id(run)] = tex_segments[best_idx]["formula"]
+        # sinon : ce run ne correspond a aucune formule source disponible
+        # (probablement un fragment d'indice/exposant isole a tort) — on le
+        # laisse sans correspondance, sans consequence sur les runs suivants.
     return matches
 
 
@@ -932,6 +1032,30 @@ def _render_page_markdown(elements: list[_Element], code_char_width: float = 0.0
 
 
 _FENCE = "```"
+_IMAGE_LINE_RE = re.compile(r"^!\[Illustration\]\(.+\)$")
+_FIGURE_CAPTION_RE = re.compile(r"^(?:Figure|Listing|Table|Tableau)\b")
+_PAGE_NUMBER_LINE_RE = re.compile(r"^\d{1,4}$")
+
+
+def _looks_like_page_furniture(text: str) -> bool:
+    """Vrai si `text` ne contient QUE des éléments typiques de mise en page
+    LaTeX susceptibles de s'intercaler entre deux moitiés d'un même bloc de
+    code coupé par un saut de page — une illustration flottante (jamais
+    fixée à un endroit précis par LaTeX, peut atterrir n'importe où selon
+    l'algorithme de placement, y compris sans rapport avec le sujet du
+    texte voisin — vérifié empiriquement), sa légende, un numéro de page
+    isolé. Faux dès qu'une ligne ne correspond à aucun de ces motifs — un
+    vrai paragraphe de prose substantiel indique deux blocs de code
+    réellement distincts séparés par une explication, jamais une simple
+    coupure de page, et ne doit jamais être avalé par erreur."""
+    for raw_line in text.split("\n"):
+        line = raw_line.strip(_STRIP_CHARS)
+        if not line:
+            continue
+        if _IMAGE_LINE_RE.match(line) or _FIGURE_CAPTION_RE.match(line) or _PAGE_NUMBER_LINE_RE.match(line):
+            continue
+        return False
+    return True
 
 
 def _merge_cross_page_code_fences(page_markdowns: list[str]) -> list[str]:
@@ -943,23 +1067,75 @@ def _merge_cross_page_code_fences(page_markdowns: list[str]) -> list[str]:
     distincts côté extraction — la frontière de page n'a aucune
     signification pour le contenu du bloc de code lui-même).
 
+    Gère aussi le cas où du "mobilier de page" (voir
+    `_looks_like_page_furniture`) s'intercale entre la fin de la première
+    moitié et la reprise de la seconde — sur une ou PLUSIEURS pages
+    consécutives entièrement composées de ce mobilier (vérifié
+    empiriquement : une illustration flottante D'UN AUTRE CHAPITRE occupait
+    à elle seule toute une page intermédiaire, avec sa légende et son
+    numéro de page — aucun rapport thématique avec le code environnant,
+    placée là par l'algorithme de mise en page de LaTeX). Sans cette
+    traversée multi-pages, la fusion échouait (la page suivant
+    immédiatement la coupure ne commençait pas par un fence) et le contrôle
+    de fidélité tombait à 88% de similarité (seuil 95%) au lieu de
+    reconnaître le même bloc source. Le mobilier traversé est préservé tel
+    quel juste après le bloc fusionné, jamais perdu — seulement déplacé hors
+    du milieu du code.
+
+    Traite `page_markdowns` comme une file (pas un index figé) : le reliquat
+    d'une page après une fusion (`rest_of_page`, tout ce qui suit la
+    fermeture du fence repris) est réinjecté en tête de la file plutôt
+    qu'ajouté tel quel au résultat final — nécessaire pour DEUX coupures de
+    page consécutives (vérifié empiriquement : une classe Python coupée
+    page N/N+1, immédiatement suivie d'un paragraphe puis d'un second bloc
+    de code coupé page N+1/N+2 via une page de mobilier). Un index figé
+    traiterait `rest_of_page` comme définitif sans jamais remarquer qu'il se
+    termine lui-même par un fence ouvert nécessitant une fusion avec la
+    suite — la seconde coupure passait alors inaperçue silencieusement.
+
     Opère au niveau chaîne (pas `_Element`) car chaque page est déjà rendue
     indépendamment par `_render_page_markdown` à ce stade — plus simple et
     plus sûr qu'une refonte du rendu par page pour un cas qui ne concerne
     jamais que la toute première/dernière ligne de chaque page concernée."""
-    if not page_markdowns:
-        return []
-    merged = [page_markdowns[0]]
-    for md in page_markdowns[1:]:
-        prev = merged[-1]
-        prev_stripped = prev.rstrip()
-        md_stripped = md.lstrip()
-        if not (prev_stripped.endswith(_FENCE) and md_stripped.startswith(_FENCE)):
-            merged.append(md)
+    remaining = list(page_markdowns)
+    merged: list[str] = []
+    while remaining:
+        current = remaining.pop(0)
+        current_stripped = current.rstrip(_STRIP_CHARS)
+        if not current_stripped.endswith(_FENCE):
+            merged.append(current)
             continue
 
-        prev_body = prev_stripped[: -len(_FENCE)]
-        after_open = md_stripped[len(_FENCE):]
+        # Traverse zero ou plusieurs pages ENTIEREMENT composees de
+        # mobilier (voir _looks_like_page_furniture) a la recherche de la
+        # reprise du fence — jamais au-dela d'une vraie page de contenu.
+        furniture_chunks: list[str] = []
+        idx = 0
+        resumed = False
+        fence_idx = -1
+        while idx < len(remaining):
+            candidate = remaining[idx].lstrip(_STRIP_CHARS)
+            fence_idx = candidate.find(_FENCE)
+            before_fence = candidate if fence_idx == -1 else candidate[:fence_idx]
+            if not _looks_like_page_furniture(before_fence):
+                break
+            stripped_before = before_fence.strip(_STRIP_CHARS)
+            if stripped_before:
+                furniture_chunks.append(stripped_before)
+            if fence_idx != -1:
+                resumed = True
+                break
+            idx += 1
+
+        if not resumed:
+            merged.append(current)
+            continue
+
+        resumed_page = remaining[idx]
+        del remaining[: idx + 1]
+
+        after_furniture = resumed_page.lstrip(_STRIP_CHARS)
+        after_open = after_furniture[fence_idx + len(_FENCE):]
         if after_open.startswith("\n"):
             after_open = after_open[1:]
         close_idx = after_open.find("\n" + _FENCE)
@@ -971,9 +1147,11 @@ def _merge_cross_page_code_fences(page_markdowns: list[str]) -> list[str]:
             first_fence_body = after_open[:close_idx]
             rest_of_page = after_open[close_idx + 1 + len(_FENCE):]
 
-        merged[-1] = prev_body + "\n" + first_fence_body + "\n" + _FENCE
-        if rest_of_page.strip():
-            merged.append(rest_of_page.lstrip("\n"))
+        prev_body = current_stripped[: -len(_FENCE)]
+        merged.append(prev_body + "\n" + first_fence_body + "\n" + _FENCE)
+        merged.extend(furniture_chunks)
+        if rest_of_page.strip(_STRIP_CHARS):
+            remaining.insert(0, rest_of_page.lstrip("\n"))
     return merged
 
 
@@ -1051,6 +1229,7 @@ def extract_native_pdf(
                 if el:
                     elements.append(el)
 
+        elements = _merge_code_trailing_comments(elements)
         other_elements, runs = _group_formula_runs(elements)
         per_page_other_elements[pno] = other_elements
         per_page_formula_runs[pno] = runs

@@ -1,8 +1,8 @@
 """Description d'image en langage naturel, via un appel `claude -p` headless
 avec l'outil `Read` restreint au dossier `images/` du document traité.
 
-Contrairement aux autres appels `claude -p` de ce projet (`ligature_repair.py`,
-`concepts.py` : texte seul, `--tools ""`), décrire une image exige que Claude
+Contrairement aux autres appels `claude -p` de ce projet (`concepts.py`,
+`entity_resolution.py` : texte seul, `--tools ""`), décrire une image exige que Claude
 puisse réellement la voir — impossible via stdin seul. On active donc l'outil
 `Read`, mais restreint via `--add-dir` au seul dossier contenant l'image
 traitée (jamais au projet entier), pour garder l'appel aussi borné que

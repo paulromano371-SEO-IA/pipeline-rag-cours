@@ -141,7 +141,7 @@ def extract_display_segments(tex_source: str, context_words: int = 12) -> list[d
     return segments
 
 
-_HEADING_RE = re.compile(r"\\(?:chapter|section|subsection)\*?\{([^}]*)\}")
+_HEADING_START_RE = re.compile(r"\\(?:chapter|section|subsection)\*?\{")
 
 
 def extract_headings(tex_source: str) -> list[str]:
@@ -150,8 +150,32 @@ def extract_headings(tex_source: str) -> list[str]:
     brut du titre inclus) — vérité terrain pour s'assurer qu'aucun titre ne
     manque à l'appel dans `pivot.md` (voir `fidelity_check.py`) : une
     section absente du pivot indiquerait un vrai trou de couverture, pas
-    seulement un défaut de mise en forme."""
-    return [m.group(1).strip() for m in _HEADING_RE.finditer(tex_source)]
+    seulement un défaut de mise en forme.
+
+    Compteur de profondeur d'accolades (pas une regex `\\{([^}]*)\\}` seule)
+    pour retrouver l'accolade fermante correspondante : un titre contenant
+    une commande imbriquée comme `\\emph{medv}` a sa PROPRE accolade
+    fermante avant celle du `\\section{...}` englobant — une regex
+    non-greedy sur `[^}]*` s'arrête à cette première accolade rencontrée et
+    tronque tout le reste du titre (vérifié empiriquement : "Atelier
+    pratique : régresser \\emph{medv} sur les données de Boston" coupé en
+    "Atelier pratique : régresser \\emph{medv", perdant purement et
+    simplement la fin du titre — pas un simple défaut de normalisation,
+    une vraie perte de contenu depuis la vérité terrain elle-même)."""
+    titles = []
+    for m in _HEADING_START_RE.finditer(tex_source):
+        start = m.end()
+        depth = 1
+        i = start
+        while i < len(tex_source) and depth > 0:
+            if tex_source[i] == "{":
+                depth += 1
+            elif tex_source[i] == "}":
+                depth -= 1
+            i += 1
+        if depth == 0:
+            titles.append(tex_source[start:i - 1].strip())
+    return titles
 
 
 _LSTLISTING_BLOCK_RE = re.compile(

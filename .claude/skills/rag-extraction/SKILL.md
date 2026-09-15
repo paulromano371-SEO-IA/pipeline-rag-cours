@@ -15,9 +15,12 @@ sortie de `/cours-condense`) en markdown pivot exploitable par les étapes
 suivantes (`/rag-images`, `/rag-chunking`, `/rag-index`, `/rag-concepts`,
 `/rag-graphe`).
 
-Script déterministe (PyMuPDF), aucune rédaction ni jugement de contenu par
-Claude — un seul appel `claude -p` headless interne si des ligatures cassées
-sont détectées (réparation automatique).
+Script entièrement déterministe (PyMuPDF), aucune rédaction ni jugement de
+contenu par Claude, et aucun appel `claude -p` interne — la réparation des
+ligatures cassées (`ligature_repair.py`) et le recollage des césures de fin
+de ligne (`convert.py`, voir plus bas) s'appuient tous deux sur un
+dictionnaire français hors ligne (`pyspellchecker`), jamais sur une
+inférence LLM.
 
 ## Détection des formules mathématiques en texte natif
 
@@ -86,11 +89,14 @@ faux positifs décrits ci-dessus (indices/exposants de formules inline).
   ensuite.
 
 Dans les deux cas, une zone non appariée ne dégrade jamais les zones déjà
-correctement appariées ailleurs dans le même document — sauf bug
-d'alignement (voir `match_formula_runs_to_tex` : l'appariement glouton
-regarde désormais plusieurs formules source en avance du pointeur courant,
-justement pour qu'une seule formule sans run correspondant ne désynchronise
-jamais l'appariement de toutes celles qui suivent).
+correctement appariées ailleurs dans le même document : `match_formula_runs_to_tex`
+apparie chaque run à sa meilleure correspondance parmi **toutes** les
+formules source encore disponibles (recherche globale, comme
+`fidelity_check.check_code_blocks`), jamais via un pointeur séquentiel —
+même à fenêtre glissante, un pointeur reste vulnérable à se bloquer dès que
+plus de formules consécutives que la taille de la fenêtre n'ont aucun run
+correspondant (bug trouvé et corrigé en revue de code). La recherche
+globale n'a structurellement pas ce mode d'échec.
 
 Le compte-rendu de fin d'exécution (voir plus bas) affiche
 `<nb appariées>/<nb zones détectées>` : un reliquat non nul n'est jamais une
@@ -162,20 +168,79 @@ au-delà de simples artefacts d'extraction :
 - une illustration présente dans `illustrations/` mais jamais insérée dans
   `course.tex` par `/cours-condense` lui-même (pas un défaut de cette étape)
   reste signalée telle quelle — la corriger revient à `/cours-condense`, pas
-  à `/rag-extraction`.
+  à `/rag-extraction` ;
+- le `.strip()` nu (et `\s` en regex) traite U+001C-U+001F comme des espaces
+  (propriété Unicode) — supprimait silencieusement une ligature tombant en
+  tête/fin de texte ("fidélité" → "délité" en tête de titre) — corrigé
+  (`_STRIP_CHARS` explicite dans `convert.py`) ;
+- une fin de phrase de prose avec un seul mot long en `\texttt{...}` pouvait
+  dépasser le seuil de classification "code" et fusionner à tort avec le
+  bloc de code suivant — corrigé (seuil `_CODE_LINE_MIN_RATIO` relevé de 0.6
+  à 0.9, une vraie ligne de code étant toujours à ratio 1.0) ;
+- un commentaire Python de fin de ligne (`# ...`), rendu dans une police
+  différente, atterrissait comme une ligne PyMuPDF séparée au lieu de rester
+  en fin de ligne de code — corrigé (`_merge_code_trailing_comments`,
+  fusion par proximité verticale) ;
+- une césure automatique de pdflatex en fin de ligne ("ex-" / "ploration")
+  restait non recollée — corrigé (`_join_wrapped_lines`, vérification par
+  dictionnaire français, sans risque pour un vrai mot composé comme
+  "auto-encodeur") ;
+- un titre contenant des maths inline (`$f$`, `$k$`) était signalé absent à
+  tort : `pivot.md` était déjà correct (pdflatex ne rend jamais les `$`),
+  mais `_normalize_heading` ne les retirait pas côté `course.tex` — corrigé
+  (`fidelity_check.py`, retrait des `$`, même principe que `~`) ;
+- `\og`...`\fg{}` (guillemets français) subissaient le même défaut de police
+  que les ligatures mais n'étaient jamais résolus (hors du candidat
+  ff/fi/fl/ffi/ffl) — pas qu'un problème de titre, du texte réel corrompu en
+  pleine prose (43 paires observées sur un document) — corrigé
+  (`infer_symbol_pair_mapping` dans `ligature_repair.py` : appariement par
+  alternance stricte ouverture/fermeture, sans dictionnaire ni référence à
+  `course.tex`). Une fois les guillemets restitués, `_normalize_heading` ne
+  les retirait pas non plus côté `pivot.md` — corrigé au même endroit que
+  pour `$` ;
+- un titre contenant une commande imbriquée (`\emph{medv}`) était tronqué à
+  la première accolade fermante rencontrée par `extract_headings` (regex
+  `[^}]*}`, pas de gestion de l'imbrication) — perte réelle de contenu dans
+  la vérité terrain elle-même, pas un défaut de normalisation — corrigé
+  (`tex_source.py`, compteur de profondeur d'accolades) ;
+- un bloc de code coupé par un saut de page ne se refusionnait pas quand une
+  illustration flottante (D'UN AUTRE CHAPITRE, placée là par l'algorithme de
+  mise en page de LaTeX) occupait à elle seule toute une page intermédiaire
+  entre les deux moitiés — corrigé (`_looks_like_page_furniture` dans
+  `convert.py`, reconnaît illustration/légende/numéro de page isolé comme du
+  mobilier traversable, jamais un vrai paragraphe de prose). Cas plus
+  retors : DEUX coupures de page consécutives (une classe Python coupée
+  page N/N+1, suivie d'un paragraphe puis d'un second bloc coupé page
+  N+1/N+2 via une page de mobilier) — le reliquat de la première fusion
+  n'était jamais réexaminé pour une seconde fusion, silencieusement —
+  corrigé (`_merge_cross_page_code_fences` traite les pages comme une file,
+  pas un index figé : tout reliquat est réinjecté en tête pour réexamen).
 
 ## Execution
 
 Toujours en foreground, bloquant jusqu'a complétion — jamais via
-`run_in_background` ni aucun mécanisme async. Lancer cette commande en
-arrière-plan, ou en parallèle d'une autre étape du pipeline, risque une
-contention entre appels `claude -p` imbriques (réparation de ligatures).
+`run_in_background` ni aucun mécanisme async, par cohérence avec les autres
+étapes du pipeline (`/cours-condense`, `/rag-concepts`, `/rag-graphe`...) qui
+font, elles, des appels `claude -p` internes et risquent une contention si
+lancées en arrière-plan ou en parallèle d'une autre étape. `/rag-extraction`
+elle-même n'a plus d'appel `claude -p` interne (la réparation des ligatures
+est un dictionnaire hors ligne, voir `ligature_repair.py`), mais garde la
+même règle pour rester prévisible d'une étape à l'autre. Techniquement
+imposé par un hook `PreToolUse` sur `Bash`
+(`.claude/hooks/block_rag_background.py`, voir `.claude/settings.json`), qui
+refuse tout `run_in_background: true` sur une commande référençant un script
+du pipeline RAG.
 
 **Interdiction de déléguer à un sous-agent** (outil `Agent`) toute lecture ou
 vérification de `pivot.md` ou du rapport qualité — cette lecture doit être
 faite directement, dans le même tour de conversation, jamais confiée à un
 sous-agent "pour économiser du contexte" : même raison que ci-dessus,
 préserver le déterminisme et éviter toute contention entre appels imbriqués.
+Techniquement imposé par un hook `PreToolUse` sur `Agent`
+(`.claude/hooks/block_rag_extraction_subagent_read.py`, voir
+`.claude/settings.json`), qui refuse tout appel `Agent` dont le prompt
+référence `pivot.md` ou `rag_data/work/` — même mécanisme que le hook
+`run_in_background` ci-dessus.
 
 ```bash
 "<racine_projet>/.venv-rag/Scripts/python.exe" "<racine_projet>/.claude/skills/rag-extraction/scripts/run.py" "<racine_projet>/corpuscondense/<nom_du_pdf>.pdf"
@@ -189,11 +254,19 @@ Options :
 
 Sans `--force` : si `status.json` contient déjà `{"extraction": {"status": "done"}}`
 **et** que `pivot.md` existe, le script ne fait rien — il affiche
-`deja fait (extraction): <chemin>` et s'arrête (code 0), sans re-extraire ni
-rien écraser. Avec `--force` : il retraite systématiquement et écrase
+`deja fait (extraction): <chemin>` et s'arrête, sans re-extraire ni rien
+écraser. Avec `--force` : il retraite systématiquement et écrase
 `pivot.md`/`images/`/`meta.json`, quel que soit le statut précédent. Le
 script ne marque jamais l'étape `failed` : si le PDF source est introuvable,
-il s'arrête avant d'écrire `status.json` (rien à nettoyer).
+il s'arrête avant d'écrire `status.json` (rien à nettoyer, code de sortie
+`1`).
+
+**Code de sortie** : `0` si aucun problème bloquant (qualité ou fidélité),
+`2` si au moins un `BLOQUANT` figure dans le rapport — y compris sur le
+chemin "déjà fait" ci-dessus, reconstruit à partir de `quality_blocking_issues`/
+`fidelity_blocking_issues` de `status.json` (voir "Sortie"). Ce code ne
+dispense jamais de lire le rapport : il ne dit que "bloquant ou non", jamais
+lequel des deux volets ni le détail par ligne.
 
 ## Sortie
 
@@ -204,7 +277,9 @@ crée a coté du PDF source (centralisation obligatoire, voir `_rag_lib/paths.py
 - `images/` — images natives extraites (illustrations du PDF + zones de
   formule détectées en texte, `page_NNN_formula_NN.png`)
 - `meta.json` — `{"document_id", "source_pdf"}`, réutilisé par les étapes suivantes
-- `status.json` — suivi (`{"extraction": {"status": "done", ...}}`)
+- `status.json` — suivi (`{"extraction": {"status": "done", "metadata": {...}}}`),
+  `metadata` incluant notamment `quality_blocking_issues` et
+  `fidelity_blocking_issues` (comptes, pas le détail par ligne)
 
 Le script affiche le `document_id` calcule : les étapes suivantes acceptent
 indifféremment le meme chemin de PDF, ce `document_id`, ou le dossier de
@@ -216,72 +291,44 @@ L'extraction est exploitable pour `/rag-images` (l'étape suivante) dès que `st
 contient `{"extraction": {"status": "done"}}` et que `pivot.md` existe —
 exactement la condition que le script vérifie lui-même avant de sauter son
 propre travail (voir Idempotence ci-dessus). Cette condition ne garantit
-toutefois pas l'absence de problèmes qualité : les métadonnées de
-`status.json` ne portent que le compte total (`quality_issues`), jamais le
-détail par page/type — ce détail n'existe que dans la sortie affichée au
-moment de l'exécution (voir compte-rendu ci-dessous), il n'est persisté nulle
-part. Un problème bloquant signalé lors d'une exécution passée ne peut donc
-être revérifié qu'en relançant le script (`--force`), jamais en relisant
-`status.json` après coup.
+toutefois pas l'absence de problèmes bloquants : `status.json` porte
+`quality_blocking_issues`/`fidelity_blocking_issues` (comptes, voir "Sortie"
+et le code de sortie ci-dessus), qui disent SI une exécution passée avait un
+bloquant sans avoir à relancer le script — mais jamais LEQUEL ni son détail
+par page/type, qui n'existent que dans la sortie affichée au moment de
+l'exécution (voir compte-rendu ci-dessous) et ne sont pas persistés. Revoir
+ce détail exige donc toujours de relancer le script (`--force`).
 
 ## Après exécution
 
-Pendant l'exécution, affiche une ligne courte par action significative
-(ex. "Extraction lancée", "Ligatures détectées : réparation en cours",
-"Pivot écrit").
+Avant de lancer la commande, annonce en une phrase ce que tu vas faire.
 
-Au terme de l'exécution, affiche un résumé structuré, dans cet ordre :
-1. un titre court ("Extraction terminée — `<nom du document>`")
-2. une phrase de synthèse chiffrée : nombre de pages, nombre d'images
-   extraites (dont zones de formule détectées), nombre de ligatures réparées,
-   nombre de formules reprises depuis `course.tex` sur le total détecté
-   (`<nb appariées>/<nb zones>`, voir section "Résolution : course.tex"
-   ci-dessus), et si les illustrations proviennent des fichiers source ou de
-   l'extraction native du PDF
-3. si le script signale des problèmes qualité, un tableau : page, type
-   (`encoding`, `control_char_ligature`, `non_textual_noise`,
-   `low_text_density`, `low_resolution_image`), description courte
-4. une ligne de total : nombre de problèmes bloquants vs indicatifs
+Le script produit lui-même, sur sa dernière ligne de sortie, un rapport
+Markdown complet et déjà formaté (titre, synthèse chiffrée, tableaux
+qualité/fidélité avec `BLOQUANT`/`indicatif` déjà tranché pour chaque ligne
+— voir `_build_report` dans `run.py`, et `blocking: bool` sur
+`QualityIssue`/`FidelityIssue`) : **relaie ce rapport tel quel**, jamais une
+reconstruction manuelle à partir de nombres relus dans la sortie — la
+distinction bloquant/indicatif, l'ordre des sections et le format ne
+laissent aucune place à l'interprétation, ce n'est donc jamais à toi de les
+recalculer ni de les reformuler.
 
-**Distinction bloquant/indicatif, fixée ici — jamais laissée à l'appréciation
-au moment de la lecture du rapport :**
-- **jamais bloquant** : `control_char_ligature` — seul type que le script
-  corrige lui-même (réparation de ligatures). Attention : le contrôle
-  qualité est calculé *avant* la réparation et n'est jamais recalculé
-  après — des occurrences de ce type dans le rapport peuvent donc déjà être
-  résolues dans le `pivot.md` final dès que `ligature_repairs > 0`. Vérifie
-  directement dans `pivot.md` en cas de doute plutôt que de te fier au compte
-  affiché.
-- **bloquant par défaut** : `encoding`, `non_textual_noise`,
-  `low_text_density`, `low_resolution_image` — le script se contente de les
-  signaler, sans jamais les corriger. Une exception cas par cas reste
-  possible, mais doit être justifiée explicitement dans le compte-rendu,
-  jamais silencieuse.
+Deux décisions restent les tiennes, le rapport ne les prend jamais à ta
+place :
 
-Si un problème bloquant est détecté : liste-le précisément (page + type +
-description) dans le tableau ci-dessus, et **arrête-toi avant de proposer
-d'enchaîner sur `/rag-images`** — jamais de correction silencieuse, jamais
-de contenu inventé pour combler une page mal extraite.
-
-N'invente jamais de contenu pour combler une page mal extraite.
-
-5. **Contrôle de fidélité** (voir section dédiée ci-dessus) : affiche
-   `illustrations <n>/<n>, code <n>/<n>, formules exactes <n>/<n> (+<n> en
-   image de repli)` — ou `saute (dossier de travail /cours-condense
-   introuvable)` si non applicable. Si des anomalies sont remontées, un
-   tableau **distinct** du tableau qualité ci-dessus, marquant chacune
-   `BLOQUANT` ou `indicatif` (cette distinction est déjà fixée par
-   `fidelity_check.py`, jamais à réévaluer à la lecture).
-
-**Toute anomalie `BLOQUANT` du contrôle de fidélité (illustration manquante,
-bloc de code non retrouvé à l'identique, formule ni en texte ni en image)
-arrête-toi avant de proposer d'enchaîner sur `/rag-images`, exactement comme
-un problème qualité bloquant** — avec une nuance : si l'anomalie est une
-illustration présente dans `illustrations/` mais absente de `course.tex`
-lui-même (jamais insérée par `/cours-condense`), ce n'est pas un défaut de
-cette étape-ci — signale-le comme tel dans le compte-rendu (chapitre/fichier
-concerné) plutôt que de chercher une correction côté `/rag-extraction`.
-
-Les anomalies `indicatif` (formule rasterisée en image de repli faute de
-correspondance en texte) n'empêchent jamais d'enchaîner — elles signalent
-seulement un point qui resterait à vérifier visuellement si besoin.
+1. **Un `BLOQUANT` (qualité ou fidélité) détecté ⇒ arrête-toi avant de
+   proposer d'enchaîner sur `/rag-images`** — jamais de correction
+   silencieuse, jamais de contenu inventé pour combler une page mal
+   extraite. Le code de sortie (voir "Idempotence") dit déjà SI ce cas se
+   présente, sans lire le rapport — mais l'arrêt lui-même, la décision
+   d'une exception cas par cas (possible, mais doit être justifiée
+   explicitement dans ta réponse, jamais silencieuse), restent les tiennes.
+2. Une illustration présente dans `illustrations/` mais jamais insérée dans
+   `course.tex` lui-même (défaut de `/cours-condense`, pas de
+   `/rag-extraction`) est **déjà détectée et reclassée automatiquement en
+   indicatif** par `fidelity_check.py` (`check_illustrations`, comparaison
+   directe aux `\includegraphics` de `course.tex`) — son détail nomme déjà
+   explicitement `/cours-condense` comme responsable. Rien à déduire
+   toi-même pour ce cas précis ; le principe (certaines anomalies relèvent
+   d'une étape amont) peut néanmoins resservir face à un nouveau type
+   d'anomalie non encore reclassé automatiquement.

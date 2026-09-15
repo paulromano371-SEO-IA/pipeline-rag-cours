@@ -51,7 +51,14 @@ def main() -> int:
     if status_lib.is_done(work_dir, "extraction") and not args.force and pivot_path.exists():
         print(f"deja fait (extraction): {pivot_path}")
         print(f"document_id: {document_id}")
-        return 0
+        # Meme logique de code de sortie que l'execution normale (voir plus
+        # bas) : reconstruite a partir des compteurs deja persistes, pour ne
+        # pas reintroduire la limite documentee dans SKILL.md ("ne peut etre
+        # revrifie qu'en relancant avec --force") main tenant que ces deux
+        # compteurs sont bien dans status.json.
+        metadata = status_lib.load_status(work_dir).get("extraction", {}).get("metadata", {})
+        has_blocking = bool(metadata.get("quality_blocking_issues")) or bool(metadata.get("fidelity_blocking_issues"))
+        return 2 if has_blocking else 0
 
     page_range = None
     if args.pages:
@@ -92,6 +99,7 @@ def main() -> int:
     fidelity_report = run_fidelity_check(
         pivot_path, work_dir / "images", courscondense_dir,
         illustrations_from_source=result.illustrations_from_source,
+        page_range_active=page_range is not None,
     )
 
     status_lib.mark_stage(
@@ -101,46 +109,132 @@ def main() -> int:
         formula_regions=result.n_formula_regions,
         formula_matches_from_tex_source=result.n_formula_matches_from_tex,
         illustrations_from_source=result.illustrations_from_source,
+        # Symetrique a fidelity_blocking_issues ci-dessous : sans ce compte
+        # separe, savoir si une execution passee avait un probleme QUALITE
+        # bloquant (voir quality.py:_is_blocking_by_default — tout sauf
+        # control_char_ligature peut l'etre) exigeait de relancer le script
+        # avec --force rien que pour le revoir (limite documentee dans
+        # SKILL.md, "Critere de sortie exploitable").
+        quality_blocking_issues=len(quality_report.blocking_issues),
         fidelity_skipped=fidelity_report.skipped,
         fidelity_blocking_issues=len(fidelity_report.blocking_issues),
         fidelity_indicative_issues=len(fidelity_report.issues) - len(fidelity_report.blocking_issues),
     )
 
-    print(f"OK: {len(result.pages)} pages, {len(result.images)} images "
-          f"(dont {result.n_formula_regions} zone(s) de formule detectee(s) en texte), "
-          f"{len(quality_report.issues)} probleme(s) qualite, {ligature_repairs} ligature(s) reparee(s)")
-    print(f"formules reprises depuis course.tex: {result.n_formula_matches_from_tex}/{result.n_formula_regions} "
-          f"(le reste, si non nul : rasterise + a OCRiser par /rag-images si course.tex est absent, "
-          f"sinon redescendu en prose approximative — jamais une image)")
-    print(f"illustrations depuis fichiers source: {'oui' if result.illustrations_from_source else 'non (extraction native du PDF)'}")
-    print(f"document_id: {document_id}")
-    print(f"dossier de travail: {work_dir}")
-    if quality_report.issues:
-        print("Problemes qualite restants:")
-        for issue in quality_report.issues:
-            print(f"  page {issue.page_number} [{issue.kind}]: {issue.detail}")
+    print(_build_report(
+        document_name=pdf_path.stem, document_id=document_id, work_dir=work_dir,
+        result=result, quality_report=quality_report, ligature_repairs=ligature_repairs,
+        fidelity_report=fidelity_report, page_range=page_range,
+    ))
+    # Code de sortie 2 : extraction reussie (status.json reste "done", ce
+    # n'est jamais un echec du script) mais au moins un probleme BLOQUANT
+    # (qualite ou fidelite) figure dans le rapport ci-dessus — permet de
+    # detecter cet etat sans reparser/recompter le tableau Markdown (voir
+    # SKILL.md, "Apres execution", decision 1). Ne remplace pas la lecture
+    # du rapport : lequel des deux volets est bloquant, et le detail par
+    # ligne, restent uniquement dans le texte affiche.
+    has_blocking = bool(quality_report.blocking_issues) or bool(fidelity_report.blocking_issues)
+    return 2 if has_blocking else 0
 
-    print(
-        f"Controle de fidelite (syntaxe Python) : {fidelity_report.n_code_blocks_syntax_valid}/"
-        f"{fidelity_report.n_code_blocks_syntax_checked} blocs de code valides"
+
+def _build_report(
+    *, document_name: str, document_id: str, work_dir: Path, result, quality_report,
+    ligature_repairs: int, fidelity_report, page_range: tuple[int, int] | None,
+) -> str:
+    """Rapport Markdown complet, deja pret a etre relaye tel quel — le format
+    (titre, ordre des sections, distinction bloquant/indicatif) est fixe,
+    sans aucune variation d'une execution a l'autre : c'est donc ce script,
+    pas l'agent qui l'invoque, qui doit le produire (voir SKILL.md, section
+    "Apres execution" — l'agent relaie ce texte, il ne le reconstruit pas)."""
+    lines: list[str] = []
+    lines.append(f"## Extraction terminée — `{document_name}`")
+    lines.append("")
+    lines.append(
+        f"{len(result.pages)} pages, {len(result.images)} images "
+        f"(dont {result.n_formula_regions} zone(s) de formule détectée(s) en texte), "
+        f"{len(quality_report.issues)} problème(s) qualité, {ligature_repairs} ligature(s) réparée(s)."
     )
+    lines.append(
+        f"Formules reprises depuis `course.tex` : {result.n_formula_matches_from_tex}/{result.n_formula_regions} "
+        f"(le reste, si non nul : rastérisé + à OCRiser par `/rag-images` si `course.tex` est absent, "
+        f"sinon redescendu en prose approximative — jamais une image)."
+    )
+    lines.append(
+        f"Illustrations depuis fichiers source : "
+        f"{'oui' if result.illustrations_from_source else 'non (extraction native du PDF)'}."
+    )
+    lines.append("")
+    lines.append(f"- `document_id` : `{document_id}`")
+    lines.append(f"- dossier de travail : `{work_dir}`")
+
+    if quality_report.issues:
+        lines.append("")
+        lines.append("### Problèmes qualité")
+        lines.append("")
+        lines.append("| Page | Type | Sévérité | Détail |")
+        lines.append("|---|---|---|---|")
+        for issue in quality_report.issues:
+            sev = "BLOQUANT" if issue.blocking else "indicatif"
+            lines.append(f"| {issue.page_number} | `{issue.kind}` | {sev} | {issue.detail} |")
+        n_block = len(quality_report.blocking_issues)
+        n_indic = len(quality_report.indicative_issues)
+        lines.append("")
+        lines.append(f"**Total** : {n_block} bloquant(s), {n_indic} indicatif(s).")
+        if n_block:
+            lines.append("")
+            lines.append(
+                "**Problème(s) bloquant(s) détecté(s) — arrête-toi avant de proposer d'enchaîner sur "
+                "`/rag-images`**, sauf exception justifiée explicitement dans le compte-rendu. "
+                "N'invente jamais de contenu pour combler une page mal extraite."
+            )
+
+    lines.append("")
+    lines.append(
+        f"### Contrôle de fidélité (syntaxe Python) : "
+        f"{fidelity_report.n_code_blocks_syntax_valid}/{fidelity_report.n_code_blocks_syntax_checked} "
+        f"blocs de code valides"
+    )
+
+    lines.append("")
     if fidelity_report.skipped:
-        print("Controle de fidelite (vs course.tex): saute (dossier de travail /cours-condense introuvable)")
-    else:
-        print(
-            f"Controle de fidelite (vs course.tex): illustrations {fidelity_report.n_illustrations_verified}/{fidelity_report.n_illustrations_expected}, "
-            f"code {fidelity_report.n_code_blocks_verified}/{fidelity_report.n_code_blocks_expected}, "
-            f"formules exactes {fidelity_report.n_formulas_verified_exact}/{fidelity_report.n_formulas_expected} "
-            f"(+{fidelity_report.n_formulas_as_image} en image de repli), "
-            f"titres {fidelity_report.n_headings_verified}/{fidelity_report.n_headings_expected}, "
-            f"figures completes {fidelity_report.n_figures_complete}/{fidelity_report.n_figures_expected}"
+        raison = (
+            "--pages utilisé (comparaison à course.tex non fiable sur un sous-ensemble de pages)"
+            if page_range is not None else "dossier de travail /cours-condense introuvable"
         )
-    if fidelity_report.issues:
-        print("Anomalies de fidelite:")
-        for issue in fidelity_report.issues:
-            marque = "BLOQUANT" if issue.blocking else "indicatif"
-            print(f"  [{marque}] [{issue.category}] {issue.detail}")
-    return 0
+        lines.append(f"### Contrôle de fidélité (vs course.tex) : sauté ({raison})")
+    else:
+        lines.append("### Contrôle de fidélité (vs course.tex)")
+        lines.append("")
+        lines.append(
+            f"illustrations {fidelity_report.n_illustrations_verified}/{fidelity_report.n_illustrations_expected}, "
+            f"code {fidelity_report.n_code_blocks_verified}/{fidelity_report.n_code_blocks_expected}, "
+            f"formules exactes {fidelity_report.n_formulas_verified_exact}/{fidelity_report.n_formulas_expected}, "
+            f"titres {fidelity_report.n_headings_verified}/{fidelity_report.n_headings_expected}, "
+            f"figures complètes {fidelity_report.n_figures_complete}/{fidelity_report.n_figures_expected}."
+        )
+        if fidelity_report.issues:
+            lines.append("")
+            lines.append("| Sévérité | Catégorie | Détail |")
+            lines.append("|---|---|---|")
+            for issue in fidelity_report.issues:
+                sev = "BLOQUANT" if issue.blocking else "indicatif"
+                lines.append(f"| {sev} | {issue.category} | {issue.detail} |")
+            n_block = len(fidelity_report.blocking_issues)
+            n_indic = len(fidelity_report.issues) - n_block
+            lines.append("")
+            lines.append(f"**Total** : {n_block} bloquant(s), {n_indic} indicatif(s).")
+            if n_block:
+                lines.append("")
+                lines.append(
+                    "**Anomalie(s) de fidélité bloquante(s) détectée(s) — arrête-toi avant de proposer "
+                    "d'enchaîner sur `/rag-images`**, exactement comme un problème qualité bloquant. "
+                    "Nuance : si l'anomalie est une illustration présente dans `illustrations/` mais absente "
+                    "de `course.tex` lui-même (jamais insérée par `/cours-condense`), ce n'est pas un défaut "
+                    "de cette étape-ci — signale-le comme tel plutôt que de chercher une correction côté "
+                    "`/rag-extraction`."
+                )
+
+    return "\n".join(lines)
 
 
 if __name__ == "__main__":
