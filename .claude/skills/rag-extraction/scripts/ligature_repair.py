@@ -41,11 +41,32 @@ bien plus large qu'un simple problème de titre. Résolu par
 uniquement par alternance stricte ouverture/fermeture dans l'ordre de
 lecture (une paire de guillemets encadre toujours un span borné, jamais
 imbriquée en français) — même exigence de vote unanime qu'`_resolve_code`
-avant de conclure."""
+avant de conclure.
+
+Deux variantes supplémentaires du même défaut, vérifiées empiriquement sur
+plusieurs livres :
+- des guillemets droits collés à leur contenu (`` `` ``/`` '' ``, convention
+  anglaise de citation LaTeX — SANS espace, contrairement à `\og`/`\fg{}`
+  qui en a toujours une) : `find_symbol_candidate_occurrences` élargit la
+  détection à une occurrence qui touche un mot d'UN SEUL côté (jamais des
+  deux, ce qui resterait une ligature) pour les inclure. `infer_symbol_pair_mapping`
+  choisit alors `"` (le même caractère aux deux bouts) plutôt que « / »,
+  selon que la paire touche ou non un mot (voir `_pair_touches_word`) — un
+  guillemet français authentique n'est jamais collé, un guillemet droit
+  anglais l'est presque toujours ;
+- un symbole employé SEUL, jamais en paire (tiret de séparation dans une
+  légende `\caption{...}`, puce de liste en début de ligne — même glyphe de
+  police pour les deux usages selon le contexte, vérifié empiriquement) :
+  aucune paire ouvrant/fermant ne peut se former, donc `infer_symbol_pair_mapping`
+  ne le résout jamais. Deviner un caractère précis (tiret cadratin ou
+  demi-cadratin ? puce ?) serait une supposition non vérifiable — ce code
+  est simplement supprimé par `remove_singleton_symbols`, avec nettoyage de
+  l'espacement résiduel (jamais un caractère inventé à la place)."""
 
 from __future__ import annotations
 
 import unicodedata
+from dataclasses import dataclass
 
 from spellchecker import SpellChecker
 
@@ -133,30 +154,47 @@ def infer_ligature_mapping(occurrences: dict[str, list[tuple[str, str]]]) -> dic
     return mapping
 
 
-_SYMBOL_PAIR = {"open": "«", "close": "»"}
+_GUILLEMET_PAIR = {"open": "«", "close": "»"}
+_STRAIGHT_QUOTE = '"'
 
 
-def find_standalone_occurrences(text: str) -> dict[str, list[int]]:
+def find_symbol_candidate_occurrences(text: str) -> dict[str, list[int]]:
     """Position (index dans `text`) de chaque occurrence d'un caractère de
-    contrôle qui ne tombe JAMAIS au milieu d'un mot (voir `_word_fragment`)
-    — jamais une ligature texte (voir `_resolve_code`), mais candidat à être
-    un symbole autonome rendu par la même police opaque (guillemet,
-    tiret...). Ignore silencieusement une occurrence du même code qui, elle,
-    tombe au milieu d'un mot ailleurs dans le document (jamais observé en
-    pratique — un glyphe de police donné ne sert qu'à un seul usage — mais
-    resterait sans danger : cette occurrence-là est simplement absente
-    d'ici, traitée uniquement côté ligature)."""
+    contrôle qui NE touche PAS un mot des DEUX côtés à la fois (voir
+    `_word_fragment`) — une vraie ligature texte touche toujours un mot des
+    deux côtés (voir `_resolve_code`), donc est exclue ici. Inclut en
+    revanche une occurrence entièrement isolée (espaces des deux côtés,
+    guillemets français `\\og`/`\\fg{}`) ET une occurrence qui touche un mot
+    d'UN SEUL côté (guillemet droit collé à son contenu, `` `` ``/`` '' ``
+    sans espace — vérifié empiriquement) : ces deux cas sont des candidats à
+    être un symbole de police plutôt qu'une ligature."""
     positions: dict[str, list[int]] = {}
     for idx, c in enumerate(text):
         if c in _ALLOWED_CONTROL_CHARS:
             continue
         if unicodedata.category(c) != "Cc":
             continue
-        if _word_fragment(text, idx, step=-1) or _word_fragment(text, idx, step=1):
+        if _word_fragment(text, idx, step=-1) and _word_fragment(text, idx, step=1):
             continue
         code = f"U+{ord(c):04X}"
         positions.setdefault(code, []).append(idx)
     return positions
+
+
+def _pair_touches_word(text: str, code_open: str, code_close: str) -> bool:
+    """Vrai si au moins une occurrence de `code_open`/`code_close` touche un
+    mot d'un côté (voir `find_symbol_candidate_occurrences`) — signe d'un
+    guillemet droit collé à son contenu (convention anglaise `` `` ``/`` '' ``,
+    sans espace) plutôt que d'un guillemet français authentique (`\\og`/`\\fg{}`,
+    toujours entouré d'espaces). Détermine le caractère de remplacement
+    dans `infer_symbol_pair_mapping`."""
+    targets = {_char_from_code(code_open), _char_from_code(code_close)}
+    for idx, c in enumerate(text):
+        if c not in targets:
+            continue
+        if _word_fragment(text, idx, step=-1) or _word_fragment(text, idx, step=1):
+            return True
+    return False
 
 
 def _is_consistent_open_close_pair(ordered_codes: list[str], code_open: str, code_close: str) -> bool:
@@ -179,20 +217,23 @@ def _is_consistent_open_close_pair(ordered_codes: list[str], code_open: str, cod
 
 
 def infer_symbol_pair_mapping(text: str) -> dict[str, str]:
-    """Déduit, parmi les codes de contrôle "autonomes" (voir
-    `find_standalone_occurrences`), une éventuelle paire ouvrant/fermant de
-    guillemets français (`\\og`/`\\fg{}`) — par simple alternance stricte
-    dans l'ordre de lecture, sans dictionnaire ni référence à `course.tex`
-    (voir `_is_consistent_open_close_pair`).
+    """Déduit, parmi les codes de contrôle candidats (voir
+    `find_symbol_candidate_occurrences`), une éventuelle paire ouvrant/fermant
+    de guillemets — par simple alternance stricte dans l'ordre de lecture,
+    sans dictionnaire ni référence à `course.tex` (voir
+    `_is_consistent_open_close_pair`). Le caractère de remplacement dépend
+    du type de paire (voir `_pair_touches_word`) : `"` (le même aux deux
+    bouts) pour un guillemet droit collé à son contenu, « / » pour un
+    guillemet français authentique toujours isolé par des espaces.
 
     Chaque code ne peut appartenir qu'à UNE SEULE paire valide : si un code
     alterne parfaitement avec plusieurs codes différents (ambigu — ne
     devrait pas arriver avec de vrais guillemets, mais resterait un signal
     de confusion réel), aucune des paires impliquant ce code n'est retenue
-    plutôt que de choisir au hasard. Un code "autonome" qui ne fait partie
-    d'aucune paire valide reste non résolu (guillemet incomplet, symbole
-    d'une autre nature...) — jamais une supposition."""
-    positions = find_standalone_occurrences(text)
+    plutôt que de choisir au hasard. Un code candidat qui ne fait partie
+    d'aucune paire valide reste non résolu ici (traité comme symbole isolé,
+    voir `remove_singleton_symbols`) — jamais une supposition."""
+    positions = find_symbol_candidate_occurrences(text)
     codes = sorted(positions)
     if len(codes) < 2:
         return {}
@@ -212,9 +253,63 @@ def infer_symbol_pair_mapping(text: str) -> dict[str, str]:
     for code_open, code_close in valid_pairs:
         if involved.count(code_open) > 1 or involved.count(code_close) > 1:
             continue  # code ambigu (plusieurs pairages valides) : ecarte
-        mapping[code_open] = _SYMBOL_PAIR["open"]
-        mapping[code_close] = _SYMBOL_PAIR["close"]
+        if _pair_touches_word(text, code_open, code_close):
+            mapping[code_open] = _STRAIGHT_QUOTE
+            mapping[code_close] = _STRAIGHT_QUOTE
+        else:
+            mapping[code_open] = _GUILLEMET_PAIR["open"]
+            mapping[code_close] = _GUILLEMET_PAIR["close"]
     return mapping
+
+
+def find_singleton_symbol_codes(text: str) -> set[str]:
+    """Codes candidats (voir `find_symbol_candidate_occurrences`) qui ne
+    font partie d'aucune paire ouvrant/fermant résolue par
+    `infer_symbol_pair_mapping` — un symbole employé SEUL (tiret de
+    séparation, puce de liste — même glyphe de police pour les deux usages
+    selon le contexte, vérifié empiriquement), jamais en paire. Appelé sur
+    le texte APRÈS remplacement des ligatures/paires déjà résolues (voir
+    `auto_repair_ligatures`) : ces codes-là ont déjà disparu du texte à ce
+    stade, donc automatiquement absents du résultat, sans avoir besoin de
+    les exclure explicitement."""
+    return set(find_symbol_candidate_occurrences(text))
+
+
+def remove_singleton_symbols(text: str, codes: set[str]) -> str:
+    """Supprime purement et simplement chaque caractère des `codes` (jamais
+    remplacé par un caractère deviné — un tiret cadratin ou demi-cadratin ?
+    une puce ? aucun moyen fiable de trancher sans référence externe, voir
+    docstring du module) et absorbe AU PLUS UN espace/tabulation
+    directement adjacent (avant en priorité, sinon après) pour ne pas
+    laisser de double espace ni d'espace parasite en tête de ligne.
+
+    Nettoyage LOCAL caractère par caractère, jamais une regex globale sur
+    tout le texte : une regex du type `[ \\t]{2,}` -> un espace, appliquée
+    sans distinction, écraserait aussi l'indentation Python à l'intérieur
+    des blocs de code (deux espaces d'indentation ramenés à un seul) — bug
+    trouvé empiriquement (2 blocs de code sur 16 devenaient non-identiques
+    à `course.tex`, 88-92% de similarité au lieu de 100%, juste après
+    l'ajout de ce nettoyage). Ne traverse jamais un saut de ligne : un
+    espace de l'AUTRE côté d'un `\\n` n'est jamais absorbé, pour ne
+    jamais toucher l'indentation de la ligne suivante."""
+    if not codes:
+        return text
+    targets = {_char_from_code(code) for code in codes}
+    result: list[str] = []
+    i = 0
+    n = len(text)
+    while i < n:
+        c = text[i]
+        if c not in targets:
+            result.append(c)
+            i += 1
+            continue
+        if result and result[-1] in (" ", "\t"):
+            result.pop()
+        elif i + 1 < n and text[i + 1] in (" ", "\t"):
+            i += 1  # absorbe l'espace suivant a la place
+        i += 1
+    return "".join(result)
 
 
 def repair_ligatures(text: str, mapping: dict[str, str]) -> str:
@@ -225,17 +320,48 @@ def repair_ligatures(text: str, mapping: dict[str, str]) -> str:
     return result
 
 
-def auto_repair_ligatures(text: str) -> tuple[str, dict[str, str]]:
+@dataclass
+class RepairResult:
+    text: str
+    ligature_mapping: dict[str, str]
+    symbol_pair_mapping: dict[str, str]
+    singleton_codes_removed: set[str]
+
+    @property
+    def total_repairs(self) -> int:
+        """Compte total pour l'affichage synthétique (voir `run.py`,
+        `_build_report`) — ligatures ET paires de symboles confondues,
+        chacune comptant pour le nombre de CODES résolus (2 par paire),
+        cohérent avec le compte historique `ligature_repairs`."""
+        return len(self.ligature_mapping) + len(self.symbol_pair_mapping)
+
+
+def auto_repair_ligatures(text: str) -> RepairResult:
     """Enchaîne détection, inférence et remplacement — ligatures ET paires
-    de symboles autonomes (guillemets, voir `infer_symbol_pair_mapping`) :
-    même mécanisme sous-jacent (glyphe de police sans correspondance
-    Unicode), même remplacement final (`repair_ligatures` ne fait qu'un
-    remplacement caractère → chaîne, indifférent à ce qu'il répare).
-    Retourne le texte réparé (inchangé si aucun code résolu) et la
-    correspondance utilisée (les deux catégories fusionnées — un code donné
-    ne peut appartenir qu'à l'une des deux, voir leurs docstrings
-    respectives)."""
+    de symboles (guillemets, voir `infer_symbol_pair_mapping`) : même
+    mécanisme sous-jacent (glyphe de police sans correspondance Unicode),
+    même remplacement final (`repair_ligatures` ne fait qu'un remplacement
+    caractère → chaîne, indifférent à ce qu'il répare). Une fois ces deux
+    catégories remplacées, tout code candidat restant (voir
+    `find_singleton_symbol_codes`) est un symbole employé seul, jamais en
+    paire — supprimé par `remove_singleton_symbols`, jamais deviné.
+
+    Retourne un `RepairResult` : les trois catégories sont gardées
+    distinctes (pas un simple dict fusionné) pour que l'appelant puisse les
+    reporter séparément dans le contrôle qualité (voir SKILL.md) —
+    ligatures et guillemets sont de VRAIES corrections (texte restitué),
+    la suppression de symboles isolés est une DÉGRADATION CONNUE ET
+    ACCEPTÉE (contenu décoratif perdu, jamais du texte), les deux ne
+    doivent jamais être comptés ensemble sous un même intitulé."""
     occurrences = find_ligature_occurrences(text)
-    mapping = infer_ligature_mapping(occurrences)
-    mapping = {**mapping, **infer_symbol_pair_mapping(text)}
-    return repair_ligatures(text, mapping), mapping
+    ligature_mapping = infer_ligature_mapping(occurrences)
+    symbol_pair_mapping = infer_symbol_pair_mapping(text)
+    text = repair_ligatures(text, {**ligature_mapping, **symbol_pair_mapping})
+    singleton_codes = find_singleton_symbol_codes(text)
+    text = remove_singleton_symbols(text, singleton_codes)
+    return RepairResult(
+        text=text,
+        ligature_mapping=ligature_mapping,
+        symbol_pair_mapping=symbol_pair_mapping,
+        singleton_codes_removed=singleton_codes,
+    )

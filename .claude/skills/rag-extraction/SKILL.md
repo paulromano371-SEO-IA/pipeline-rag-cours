@@ -214,7 +214,30 @@ au-delà de simples artefacts d'extraction :
   N+1/N+2 via une page de mobilier) — le reliquat de la première fusion
   n'était jamais réexaminé pour une seconde fusion, silencieusement —
   corrigé (`_merge_cross_page_code_fences` traite les pages comme une file,
-  pas un index figé : tout reliquat est réinjecté en tête pour réexamen).
+  pas un index figé : tout reliquat est réinjecté en tête pour réexamen) ;
+- un guillemet droit collé à son contenu (`` `` ``/`` '' ``, convention
+  anglaise de citation LaTeX — SANS espace, contrairement à `\og`/`\fg{}`)
+  n'était jamais résolu par `infer_symbol_pair_mapping` (qui exigeait un
+  espace des deux côtés) — corrigé (`find_symbol_candidate_occurrences`
+  élargi à une occurrence touchant un mot d'UN SEUL côté ; le caractère de
+  remplacement — `"` identique aux deux bouts, ou « / » — dépend alors de
+  si la paire touche ou non un mot, voir `_pair_touches_word`) ;
+- un symbole de police employé SEUL, jamais en paire (tiret de séparation
+  dans une légende `\caption{...}`, puce de liste en début de ligne — même
+  glyphe pour les deux usages selon le contexte) restait un caractère de
+  contrôle invisible faute de mécanisme pour lui — corrigé
+  (`remove_singleton_symbols` : supprimé, jamais un caractère deviné,
+  avec absorption d'au plus un espace adjacent SANS jamais traverser un
+  saut de ligne). Premier essai erroné : un nettoyage d'espacement par
+  regex globale sur tout le texte écrasait aussi l'indentation Python à
+  l'intérieur des blocs de code (2 blocs sur 16 tombaient à 88-92% de
+  similarité avec `course.tex`) — corrigé en un nettoyage caractère par
+  caractère, strictement local à l'endroit de la suppression. Le reliquat
+  éventuel après ces trois mécanismes (ligature en plein mot jamais
+  reconnue par le dictionnaire, ou symbole sans paire valide) est
+  désormais un type de problème qualité à part entière
+  (`unresolved_control_char` dans `quality.py`, jamais bloquant, jamais une
+  perte silencieuse).
 
 ## Execution
 
@@ -278,8 +301,9 @@ crée a coté du PDF source (centralisation obligatoire, voir `_rag_lib/paths.py
   formule détectées en texte, `page_NNN_formula_NN.png`)
 - `meta.json` — `{"document_id", "source_pdf"}`, réutilisé par les étapes suivantes
 - `status.json` — suivi (`{"extraction": {"status": "done", "metadata": {...}}}`),
-  `metadata` incluant notamment `quality_blocking_issues` et
-  `fidelity_blocking_issues` (comptes, pas le détail par ligne)
+  `metadata` incluant notamment `quality_blocking_issues`,
+  `fidelity_blocking_issues`, `ligature_repairs`, `symbol_pairs_repaired` et
+  `singleton_symbols_removed` (comptes, pas le détail par ligne)
 
 Le script affiche le `document_id` calcule : les étapes suivantes acceptent
 indifféremment le meme chemin de PDF, ce `document_id`, ou le dossier de

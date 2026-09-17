@@ -25,7 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "_rag_lib"))  # pat
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # convert/tex_source/fidelity_check/ligature_repair (propres a /rag-extraction) — insere EN DERNIER pour rester prioritaire (index 0) en cas de collision de nom future avec _rag_lib
 
 from convert import extract_native_pdf
-from quality import assess_extraction_quality
+from quality import assess_extraction_quality, count_control_chars, QualityIssue
 from ligature_repair import auto_repair_ligatures
 from fidelity_check import run_fidelity_check
 import paths
@@ -85,9 +85,33 @@ def main() -> int:
     markdown = result.markdown
 
     ligature_repairs = 0
+    symbol_pairs_repaired = 0
+    singleton_symbols_removed = 0
     if any(issue.kind == "control_char_ligature" for issue in quality_report.issues):
-        markdown, mapping = auto_repair_ligatures(markdown)
-        ligature_repairs = len(mapping)
+        repair_result = auto_repair_ligatures(markdown)
+        markdown = repair_result.text
+        ligature_repairs = len(repair_result.ligature_mapping)
+        symbol_pairs_repaired = len(repair_result.symbol_pair_mapping)
+        singleton_symbols_removed = len(repair_result.singleton_codes_removed)
+
+        # Reliquat APRES les trois reparations ci-dessus (ligatures en plein
+        # mot jamais reconnues par le dictionnaire, ou symbole de police sans
+        # paire ouvrant/fermant valide) : jamais suppose absent, toujours
+        # revérifié sur le texte final — entre dans le controle qualite au
+        # meme titre que control_char_ligature (voir quality.py,
+        # _NEVER_BLOCKING_KINDS), jamais bloquant, jamais une perte
+        # silencieuse. page_number=-1 : ce compte porte sur le document
+        # fusionne dans son ensemble, plus sur une page PyMuPDF individuelle
+        # (la fusion inter-pages de convert.py a deja recompose le texte a
+        # ce stade).
+        remaining = count_control_chars(markdown)
+        if remaining > 0:
+            quality_report.issues.append(QualityIssue(
+                -1, "unresolved_control_char",
+                f"{remaining} caractère(s) de contrôle restant(s) après réparation automatique "
+                f"(ligature en plein mot non reconnue par le dictionnaire, ou symbole de police sans "
+                f"paire ouvrant/fermant valide) — jamais deviné, jamais supprimé sans le signaler ici",
+            ))
 
     work_dir.mkdir(parents=True, exist_ok=True)
     pivot_path.write_text(markdown, encoding="utf-8")
@@ -106,6 +130,8 @@ def main() -> int:
         work_dir, "extraction", "done",
         pages=len(result.pages), images=len(result.images),
         quality_issues=len(quality_report.issues), ligature_repairs=ligature_repairs,
+        symbol_pairs_repaired=symbol_pairs_repaired,
+        singleton_symbols_removed=singleton_symbols_removed,
         formula_regions=result.n_formula_regions,
         formula_matches_from_tex_source=result.n_formula_matches_from_tex,
         illustrations_from_source=result.illustrations_from_source,
@@ -124,6 +150,7 @@ def main() -> int:
     print(_build_report(
         document_name=pdf_path.stem, document_id=document_id, work_dir=work_dir,
         result=result, quality_report=quality_report, ligature_repairs=ligature_repairs,
+        symbol_pairs_repaired=symbol_pairs_repaired, singleton_symbols_removed=singleton_symbols_removed,
         fidelity_report=fidelity_report, page_range=page_range,
     ))
     # Code de sortie 2 : extraction reussie (status.json reste "done", ce
@@ -139,7 +166,8 @@ def main() -> int:
 
 def _build_report(
     *, document_name: str, document_id: str, work_dir: Path, result, quality_report,
-    ligature_repairs: int, fidelity_report, page_range: tuple[int, int] | None,
+    ligature_repairs: int, symbol_pairs_repaired: int, singleton_symbols_removed: int,
+    fidelity_report, page_range: tuple[int, int] | None,
 ) -> str:
     """Rapport Markdown complet, deja pret a etre relaye tel quel — le format
     (titre, ordre des sections, distinction bloquant/indicatif) est fixe,
@@ -152,7 +180,8 @@ def _build_report(
     lines.append(
         f"{len(result.pages)} pages, {len(result.images)} images "
         f"(dont {result.n_formula_regions} zone(s) de formule détectée(s) en texte), "
-        f"{len(quality_report.issues)} problème(s) qualité, {ligature_repairs} ligature(s) réparée(s)."
+        f"{len(quality_report.issues)} problème(s) qualité, {ligature_repairs} ligature(s) réparée(s), "
+        f"{symbol_pairs_repaired} guillemet(s) réparé(s), {singleton_symbols_removed} symbole(s) isolé(s) supprimé(s)."
     )
     lines.append(
         f"Formules reprises depuis `course.tex` : {result.n_formula_matches_from_tex}/{result.n_formula_regions} "

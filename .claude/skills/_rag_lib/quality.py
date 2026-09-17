@@ -20,14 +20,20 @@ LOW_TEXT_DENSITY_THRESHOLD = 40
 NOISE_ALPHA_RATIO_THRESHOLD = 0.3
 NOISE_MIN_LENGTH = 60
 
-# Seul type que ce module corrige lui-meme (voir /rag-extraction:
-# auto_repair_ligatures, appele des qu'une occurrence est detectee) — jamais
-# bloquant, contrairement aux autres types que ce module se contente de
-# signaler sans les corriger. Fixe ici, jamais laisse a l'appreciation de
-# l'appelant (le detail exact d'un des types "bloquant par defaut" reste
-# ouvert a une exception cas par cas justifiee explicitement, mais la valeur
-# PAR DEFAUT ne doit jamais dependre d'une relecture du texte de ce module).
-_NEVER_BLOCKING_KINDS = {"control_char_ligature"}
+# Seuls types que ce module (ou /rag-extraction en aval) corrige/traite lui
+# meme — jamais bloquants, contrairement aux autres types que ce module se
+# contente de signaler sans les corriger. control_char_ligature : voir
+# /rag-extraction:auto_repair_ligatures, appele des qu'une occurrence est
+# detectee. unresolved_control_char : le reliquat APRES cette reparation
+# (ligature en plein mot jamais reconnue par le dictionnaire, ou symbole
+# de police sans paire ouvrant/fermant — voir ligature_repair.py) ; une
+# degradation connue et acceptee (contenu decoratif perdu au pire, jamais
+# du texte), jamais une raison de bloquer la suite du pipeline. Fixe ici,
+# jamais laisse a l'appreciation de l'appelant (le detail exact d'un des
+# types "bloquant par defaut" reste ouvert a une exception cas par cas
+# justifiee explicitement, mais la valeur PAR DEFAUT ne doit jamais
+# dependre d'une relecture du texte de ce module).
+_NEVER_BLOCKING_KINDS = {"control_char_ligature", "unresolved_control_char"}
 
 
 def _is_blocking_by_default(kind: str) -> bool:
@@ -78,13 +84,16 @@ def _replacement_char_ratio(text: str) -> float:
     return text.count(_REPLACEMENT_CHAR) / len(text)
 
 
-def _count_control_chars(text: str) -> int:
+def count_control_chars(text: str) -> int:
     """Compte les caractères de contrôle non standard (hors saut de
     ligne/tabulation). Observé en pratique : des ligatures (fi, ff, fl...)
     dont la police PDF n'a pas de correspondance Unicode correcte ressortent
     comme un caractère de contrôle invisible en plein milieu d'un mot — un
     défaut silencieux qui ne produit AUCUN U+FFFD et passerait inaperçu si on
-    ne cherchait que ça."""
+    ne cherchait que ça. Public (pas de `_`) : réutilisé par `run.py` après
+    `auto_repair_ligatures` pour compter le reliquat non résolu (voir
+    `unresolved_control_char` ci-dessus), pas seulement ici en amont de la
+    réparation."""
     return sum(
         1
         for c in text
@@ -130,7 +139,7 @@ def assess_extraction_quality(result) -> QualityReport:
                 )
             )
 
-        control_char_count = _count_control_chars(page.markdown)
+        control_char_count = count_control_chars(page.markdown)
         if control_char_count > 0:
             # Zéro tolérance : même une seule occurrence corrompt un mot
             # entier (ex. "figées" -> "\\x1cgées"), donc pas de seuil de ratio ici.
