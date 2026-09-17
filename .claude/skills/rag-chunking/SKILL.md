@@ -1,8 +1,9 @@
 ---
 name: rag-chunking
 description: >-
-  Decoupe un pivot markdown (produit par /rag-extraction) en chunks
-  embeddables, sans jamais couper un bloc de code ou une image.
+  Decoupe un pivot markdown (produit par /rag-extraction et enrichi par
+  /rag-nottext) en chunks embeddables, sans jamais couper un bloc de code,
+  une image ou une formule.
   Usage: /rag-chunking <pdf_condense_ou_document_id>.
   Quatrieme etape du pipeline RAG.
 ---
@@ -11,6 +12,17 @@ description: >-
 
 Decoupe le markdown pivot en chunks (~400 tokens cible, recouvrement d'un
 bloc) prets a etre embeddes. Script deterministe (tiktoken), aucun appel LLM.
+
+Un bloc code/image/formule directement suivi de la description generee par
+`/rag-nottext` (marqueur `DESCRIPTION_MARKER`, voir `_rag_lib/chunk.py`) est
+fusionne avec elle en une seule unite atomique : le texte du chunk
+(`text`, utilise pour la citation) garde le verbatim + la description, mais
+le texte reellement embeddé (`embed_text`, utilise par `/rag-index`) ne
+retient QUE la description — jamais le LaTeX/code/legende brut, dont on a
+verifie empiriquement qu'il dilue la similarite d'embedding avec une
+question en francais au lieu de la restaurer. Un bloc pas encore traite par
+`/rag-nottext` (ou dont le traitement a echoue) n'a pas de description a
+fusionner : `embed_text` retombe alors sur le texte brut du bloc.
 
 ## Execution
 
@@ -61,9 +73,9 @@ jamais accumuler ou dupliquer du contenu d'un run a l'autre.
 ## Sortie
 
 `rag_data/work/<document_id>/chunks.json` — liste de chunks (index, texte,
-fil d'ariane des titres, nombre de tokens, presence de code) + `status.json`
-mis a jour. Toujours dans le dossier de travail centralise, jamais a cote du
-PDF source.
+texte embeddé, fil d'ariane des titres, nombre de tokens, presence de code)
++ `status.json` mis a jour. Toujours dans le dossier de travail centralise,
+jamais a cote du PDF source.
 
 ## Critère de sortie exploitable
 
@@ -79,10 +91,10 @@ sans l'avoir verifiee dans leur code.
 
 ## Blocs atomiques et recouvrement
 
-Un bloc atomique (code, image) qui depasse `--target-tokens` a lui seul
-n'est jamais scinde — il reste entier dans son propre chunk, meme si celui-ci
-depasse la cible. Seul un bloc de prose peut etre scinde, sur des frontieres
-de phrase.
+Un bloc atomique (code, image, formule) qui depasse `--target-tokens` a lui
+seul n'est jamais scinde — il reste entier dans son propre chunk, meme si
+celui-ci depasse la cible. Seul un bloc de prose peut etre scinde, sur des
+frontieres de phrase.
 
 `--overlap-blocks N` reporte les N derniers blocs du chunk qui vient d'etre
 decoupe vers le chunk suivant — **sauf les titres, toujours exclus du

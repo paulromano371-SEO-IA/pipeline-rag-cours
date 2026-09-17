@@ -16,7 +16,7 @@ livre.pdf (corpusdedepart/)
 2. /rag-extraction   →  markdown pivot structuré + images extraites
       │
       ▼
-3. /rag-images       →  description, OCR et nommage explicite des images
+3. /rag-nottext       →  description en langage naturel des images, du code et des formules
       │
       ▼
 4. /rag-chunking     →  découpage en chunks embeddables
@@ -45,15 +45,15 @@ Lit le livre source **intégralement** (jamais un extrait) et produit un support
 
 Convertit le PDF condensé (sortie de l'étape 1) en un markdown "pivot" qui distingue proprement titres, code et prose, et extrait les images natives du PDF. Une réparation automatique des ligatures typographiques cassées (ex. "ﬁ", "ﬂ") est appliquée si nécessaire. Traite aussi la détection de formules mathématiques mal ordonnées par l'extraction PDF brute.
 
-### 3. `/rag-images` — Description et OCR des images — **en cours de développement**
-`/rag-images <pdf_condense_ou_document_id>`
+### 3. `/rag-nottext` — Description des éléments non-textuels — **en cours de développement**
+`/rag-nottext <pdf_condense_ou_document_id>`
 
-Pour chaque image extraite à l'étape 2 : classification automatique (formule mathématique vs image générale), description en langage naturel, OCR adapté (LaTeX pour les formules, texte pour le reste), renommage explicite du fichier, puis injection de ce contenu dans le markdown pivot. Sans cette étape, une image reste une simple référence de fichier invisible à la recherche vectorielle.
+Pour chaque image, bloc de code et formule d'affichage (déjà en LaTeX) produits à l'étape 2 : description en langage naturel, OCR/renommage adapté pour les images (classification formule mathématique vs image générale, LaTeX via pix2tex ou texte via tesseract, nom de fichier explicite), puis injection de cette description dans le markdown pivot, juste après l'élément. Un modèle d'embedding texte ne rapproche quasiment jamais une question en français d'un verbatim LaTeX, code ou image brut — vérifié empiriquement — donc sans cette étape, ce contenu reste invisible à la recherche vectorielle.
 
 ### 4. `/rag-chunking` — Découpage en chunks — **en cours de développement**
 `/rag-chunking <pdf_condense_ou_document_id>`
 
-Découpe le markdown pivot enrichi en chunks d'environ 400 tokens (avec recouvrement), sans jamais couper un bloc de code ou une image au milieu. Étape purement déterministe (basée sur `tiktoken`), aucun appel à un modèle de langage.
+Découpe le markdown pivot enrichi en chunks d'environ 400 tokens (avec recouvrement), sans jamais couper un bloc de code, une image ou une formule au milieu. Pour un élément décrit par `/rag-nottext`, le texte réellement embeddé (calculé à l'étape suivante) ne retient que sa description en langage naturel — jamais le verbatim brut — pour ne pas diluer la similarité avec une question en français. Étape purement déterministe (basée sur `tiktoken`), aucun appel à un modèle de langage.
 
 ### 5. `/rag-index` — Indexation vectorielle — **en cours de développement**
 `/rag-index <pdf_condense_ou_document_id>`

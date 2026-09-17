@@ -185,7 +185,7 @@ def _build_report(
     )
     lines.append(
         f"Formules reprises depuis `course.tex` : {result.n_formula_matches_from_tex}/{result.n_formula_regions} "
-        f"(le reste, si non nul : rastérisé + à OCRiser par `/rag-images` si `course.tex` est absent, "
+        f"(le reste, si non nul : rastérisé + à OCRiser par `/rag-nottext` si `course.tex` est absent, "
         f"sinon redescendu en prose approximative — jamais une image)."
     )
     lines.append(
@@ -213,7 +213,7 @@ def _build_report(
             lines.append("")
             lines.append(
                 "**Problème(s) bloquant(s) détecté(s) — arrête-toi avant de proposer d'enchaîner sur "
-                "`/rag-images`**, sauf exception justifiée explicitement dans le compte-rendu. "
+                "`/rag-nottext`**, sauf exception justifiée explicitement dans le compte-rendu. "
                 "N'invente jamais de contenu pour combler une page mal extraite."
             )
 
@@ -256,7 +256,7 @@ def _build_report(
                 lines.append("")
                 lines.append(
                     "**Anomalie(s) de fidélité bloquante(s) détectée(s) — arrête-toi avant de proposer "
-                    "d'enchaîner sur `/rag-images`**, exactement comme un problème qualité bloquant. "
+                    "d'enchaîner sur `/rag-nottext`**, exactement comme un problème qualité bloquant. "
                     "Nuance : si l'anomalie est une illustration présente dans `illustrations/` mais absente "
                     "de `course.tex` lui-même (jamais insérée par `/cours-condense`), ce n'est pas un défaut "
                     "de cette étape-ci — signale-le comme tel plutôt que de chercher une correction côté "

@@ -1,13 +1,27 @@
 """Découpage sémantique du pivot Markdown en chunks embeddables.
 
-Chaque bloc Markdown (titre, paragraphe, bloc de code, image) est traité comme
-une unité atomique, jamais scindée en plein milieu — un extrait de code ou
-une phrase coupée en deux nuirait à la qualité de l'embedding et à la
-lisibilité en citation. Les chunks sont remplis glouton­nement jusqu'à une
-taille cible en tokens, avec un recouvrement d'un bloc entre deux chunks
-consécutifs pour ne pas perdre le contexte à la frontière. Le fil d'ariane
-des titres traversés est conservé en métadonnée (utilisé ensuite pour
-préfixer le texte réellement embeddé, dans `vector_store.py`).
+Chaque bloc Markdown (titre, paragraphe, bloc de code, image, formule
+d'affichage) est traité comme une unité atomique, jamais scindée en plein
+milieu — un extrait de code ou une phrase coupée en deux nuirait à la
+qualité de l'embedding et à la lisibilité en citation. Les chunks sont
+remplis gloutonnement jusqu'à une taille cible en tokens, avec un
+recouvrement d'un bloc entre deux chunks consécutifs pour ne pas perdre le
+contexte à la frontière. Le fil d'ariane des titres traversés est conservé
+en métadonnée (utilisé ensuite pour préfixer le texte réellement embeddé,
+dans `vector_store.py`).
+
+Un bloc de code, d'image ou de formule directement suivi (voir
+`/rag-nottext`) d'une description en langage naturel — repérée par le
+marqueur `DESCRIPTION_MARKER`, un commentaire HTML invisible au rendu — est
+fusionné avec elle en une seule unité atomique : le texte stocké (`Chunk.text`,
+utilisé pour la citation) reste le bloc verbatim + sa description, mais le
+texte réellement embeddé (`Chunk.embed_text`) ne retient QUE la description.
+Nécessaire empiriquement (voir `/rag-nottext/SKILL.md`) : un modèle
+d'embedding texte ne rapproche quasiment jamais une question en français
+d'une formule LaTeX ou d'un extrait de code bruts, et mélanger verbatim et
+description dans le même texte embeddé dilue la similarité au lieu de la
+restaurer — d'autant plus que le verbatim est long (formule) par rapport à
+la description.
 """
 
 from __future__ import annotations
@@ -19,16 +33,49 @@ import tiktoken
 
 _ENCODING = tiktoken.get_encoding("cl100k_base")
 _HEADING_RE = re.compile(r"^(#{1,6})\s+(.*)$")
+_FORMULA_ENV_NAMES = r"equation\*?|align\*?|gather\*?|multline\*?|eqnarray\*?|flalign\*?"
+
+# Backreference `(?P=env)` sur l'environnement d'ouverture — jamais deux
+# alternances independantes pour \begin/\end — pour ne jamais accepter un
+# environnement mal apparie (ex. `\begin{align}...\end{equation}`), meme
+# raison que `rag-extraction/scripts/tex_source.py:_FORMULA_RE`.
+_DISPLAY_FORMULA_RE = re.compile(
+    r"^(?:"
+    r"\$\$.*\$\$"
+    r"|\\\[.*\\\]"
+    r"|\\begin\{(?P<env>" + _FORMULA_ENV_NAMES + r")\}.*\\end\{(?P=env)\}"
+    r")$",
+    re.DOTALL,
+)
 
 DEFAULT_TARGET_TOKENS = 400
 DEFAULT_OVERLAP_BLOCKS = 1
 
+# Commentaire HTML (invisible au rendu Markdown) qu'insère /rag-nottext juste
+# avant chaque description générée, sur la même ligne de paragraphe qu'elle
+# (aucune ligne vide entre les deux) — c'est ce qui permet à `chunk_markdown`
+# de reconnaître une description générée d'une prose ordinaire qui suivrait,
+# par coïncidence, un bloc de code/image/formule sans en être la description.
+DESCRIPTION_MARKER = "<!-- rag-nottext:description -->"
+
+# Meme principe que DESCRIPTION_MARKER, pour le paragraphe optionnel qui suit
+# la description d'une image (transcription LaTeX OCR d'une formule, ou texte
+# detecte par OCR general) — voir /rag-nottext/SKILL.md, "Mise a jour de
+# pivot.md". Sans ce marqueur, ce paragraphe serait un bloc de prose isole
+# aux yeux de `split_into_blocks` (separe par une ligne vide de la
+# description qui le precede) : le decoupage en chunks glouton de
+# `chunk_markdown` pourrait alors le placer dans un chunk DIFFERENT de
+# l'image/description dont il depend, le rendant illisible hors contexte —
+# corrige empiriquement, voir /rag-nottext/SKILL.md.
+OCR_MARKER = "<!-- rag-nottext:ocr -->"
+
 
 @dataclass
 class _Block:
-    kind: str  # "heading" | "code" | "image" | "prose"
+    kind: str  # "heading" | "code" | "image" | "formula" | "prose"
     text: str
     heading_level: int | None = None
+    embed_text: str | None = None
 
 
 @dataclass
@@ -38,16 +85,25 @@ class Chunk:
     heading_trail: list[str]
     token_count: int
     has_code: bool
+    embed_text: str | None = None
+    has_formula: bool = False
 
 
 def count_tokens(text: str) -> int:
     return len(_ENCODING.encode(text))
 
 
-def _split_into_blocks(markdown: str) -> list[_Block]:
+def split_into_blocks(markdown: str) -> list[_Block]:
     """Scinde le Markdown en blocs atomiques, en traitant tout ce qui se
     trouve entre deux barres ```` ``` ```` comme un seul bloc de code — même
-    s'il contient des lignes vides internes — pour ne jamais le couper."""
+    s'il contient des lignes vides internes — pour ne jamais le couper.
+
+    Publique (pas de `_` initial) : réutilisée telle quelle par
+    `/rag-nottext`, qui a besoin de la même segmentation en blocs (au même
+    ordre, avec la même détection code/image/formule) pour repérer les
+    éléments non-textuels de `pivot.md` à décrire — une seule implémentation
+    de "qu'est-ce qu'un bloc atomique dans ce pivot", jamais deux logiques de
+    parsing divergentes à maintenir en parallèle."""
     lines = markdown.split("\n")
     blocks: list[_Block] = []
     buffer: list[str] = []
@@ -72,6 +128,8 @@ def _split_into_blocks(markdown: str) -> list[_Block]:
                 )
             elif para.startswith("!["):
                 blocks.append(_Block(kind="image", text=para))
+            elif _DISPLAY_FORMULA_RE.match(para):
+                blocks.append(_Block(kind="formula", text=para))
             else:
                 blocks.append(_Block(kind="prose", text=para))
 
@@ -119,6 +177,62 @@ def _split_long_prose(block: _Block, max_tokens: int) -> list[_Block]:
     return [_Block(kind="prose", text=p) for p in parts] if parts else [block]
 
 
+def _merge_description_blocks(blocks: list[_Block]) -> list[_Block]:
+    """Fusionne un bloc code/image/formule avec la description générée par
+    `/rag-nottext` qui le suit immédiatement (repérée par `DESCRIPTION_MARKER`
+    en tête du bloc de prose suivant), en une seule unité atomique : le texte
+    stocké reste bloc + description (citation intacte), mais `embed_text` ne
+    retient que la description, jamais le verbatim — voir la docstring du
+    module. Un bloc code/image/formule pas encore traité par `/rag-nottext`
+    (pas de description trouvée juste après) reste inchangé : son `embed_text`
+    reste `None`, et l'appelant retombe alors sur son texte brut.
+
+    Absorbe aussi, s'il est present, le paragraphe marque `OCR_MARKER` qui
+    peut suivre la description (transcription LaTeX ou texte OCR d'une
+    image) : ajoute a `text` (citation), jamais a `embed_text` (meme
+    raisonnement que pour le verbatim code/formule — voir la docstring du
+    module), mais surtout ne le laisse JAMAIS comme bloc de prose isole,
+    sous peine d'atterrir dans un chunk different de l'image/description
+    dont il depend lors du decoupage glouton de `chunk_markdown` (voir
+    OCR_MARKER)."""
+    merged: list[_Block] = []
+    i = 0
+    while i < len(blocks):
+        block = blocks[i]
+        following = blocks[i + 1] if i + 1 < len(blocks) else None
+        if (
+            block.kind in ("code", "image", "formula")
+            and following is not None
+            and following.kind == "prose"
+            and following.text.startswith(DESCRIPTION_MARKER)
+        ):
+            description = following.text[len(DESCRIPTION_MARKER):].strip()
+            text = f"{block.text}\n\n{description}"
+            consumed = 2
+            ocr_following = blocks[i + 2] if i + 2 < len(blocks) else None
+            if (
+                ocr_following is not None
+                and ocr_following.kind == "prose"
+                and ocr_following.text.startswith(OCR_MARKER)
+            ):
+                ocr_text = ocr_following.text[len(OCR_MARKER):].strip()
+                text = f"{text}\n\n{ocr_text}"
+                consumed = 3
+            merged.append(
+                _Block(
+                    kind=block.kind,
+                    text=text,
+                    heading_level=block.heading_level,
+                    embed_text=description,
+                )
+            )
+            i += consumed
+            continue
+        merged.append(block)
+        i += 1
+    return merged
+
+
 def chunk_markdown(
     markdown: str,
     *,
@@ -129,7 +243,7 @@ def chunk_markdown(
     `target_tokens` est une cible, pas une limite stricte : un bloc atomique
     (code, image, phrase unique) qui la dépasse à lui seul reste entier
     plutôt que d'être tronqué."""
-    raw_blocks = _split_into_blocks(markdown)
+    raw_blocks = _merge_description_blocks(split_into_blocks(markdown))
     blocks: list[_Block] = []
     for b in raw_blocks:
         if b.kind == "prose":
@@ -150,13 +264,16 @@ def chunk_markdown(
         if not current_blocks:
             return
         text = "\n\n".join(b.text for b in current_blocks)
+        embed_text = "\n\n".join(b.embed_text or b.text for b in current_blocks)
         chunks.append(
             Chunk(
                 index=len(chunks),
                 text=text,
+                embed_text=embed_text,
                 heading_trail=_trail(),
                 token_count=current_tokens,
                 has_code=any(b.kind == "code" for b in current_blocks),
+                has_formula=any(b.kind == "formula" for b in current_blocks),
             )
         )
         carried = (

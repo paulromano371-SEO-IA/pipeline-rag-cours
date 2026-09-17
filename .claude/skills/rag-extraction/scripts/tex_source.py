@@ -5,7 +5,7 @@ est disponible :
 
 - les formules mathematiques : `convert.py` doit normalement les detecter par
   police (CMMI/CMSY/CMEX) dans le PDF compile, les rasteriser, puis les faire
-  OCRiser par pix2tex a l'etape /rag-images (transcription indicative, pas
+  OCRiser par pix2tex a l'etape /rag-nottext (transcription indicative, pas
   garantie fidele sur les formules complexes). Le LaTeX source de la formule
   est pourtant deja disponible tel quel dans `course.tex` — aucune raison de
   repasser par une image + un OCR quand la verite terrain est a portee de

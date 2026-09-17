@@ -12,7 +12,7 @@ description: >-
 
 Convertit un PDF de cours condensé (normalement dans `<racine_projet>/corpuscondense/`,
 sortie de `/cours-condense`) en markdown pivot exploitable par les étapes
-suivantes (`/rag-images`, `/rag-chunking`, `/rag-index`, `/rag-concepts`,
+suivantes (`/rag-nottext`, `/rag-chunking`, `/rag-index`, `/rag-concepts`,
 `/rag-graphe`).
 
 Script entièrement déterministe (PyMuPDF), aucune rédaction ni jugement de
@@ -84,7 +84,7 @@ faux positifs décrits ci-dessus (indices/exposants de formules inline).
 - Zone non appariée **quand `course.tex` est absent** : seul cas où le
   comportement historique s'applique encore — rasterisée et sauvegardée
   comme image native (`images/page_NNN_formula_NN.png`), référencée par
-  `![Illustration](...)` dans `pivot.md` ; c'est `/rag-images`
+  `![Illustration](...)` dans `pivot.md` ; c'est `/rag-nottext`
   (description + OCR/pix2tex, avec ses propres garde-fous) qui la traite
   ensuite.
 
@@ -311,7 +311,7 @@ travail complet.
 
 ## Critère de sortie exploitable
 
-L'extraction est exploitable pour `/rag-images` (l'étape suivante) dès que `status.json`
+L'extraction est exploitable pour `/rag-nottext` (l'étape suivante) dès que `status.json`
 contient `{"extraction": {"status": "done"}}` et que `pivot.md` existe —
 exactement la condition que le script vérifie lui-même avant de sauter son
 propre travail (voir Idempotence ci-dessus). Cette condition ne garantit
@@ -341,7 +341,7 @@ Deux décisions restent les tiennes, le rapport ne les prend jamais à ta
 place :
 
 1. **Un `BLOQUANT` (qualité ou fidélité) détecté ⇒ arrête-toi avant de
-   proposer d'enchaîner sur `/rag-images`** — jamais de correction
+   proposer d'enchaîner sur `/rag-nottext`** — jamais de correction
    silencieuse, jamais de contenu inventé pour combler une page mal
    extraite. Le code de sortie (voir "Idempotence") dit déjà SI ce cas se
    présente, sans lire le rapport — mais l'arrêt lui-même, la décision

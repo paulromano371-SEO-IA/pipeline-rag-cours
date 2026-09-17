@@ -35,11 +35,20 @@ def _get_model(model_name: str = DEFAULT_MODEL_NAME) -> TextEmbedding:
 
 def embedding_text(chunk: Chunk) -> str:
     """Texte réellement embeddé : préfixé du fil d'ariane des titres, pour
-    donner du contexte à un extrait qui, isolé, serait sinon ambigu."""
+    donner du contexte à un extrait qui, isolé, serait sinon ambigu.
+
+    Utilise `chunk.embed_text` plutôt que `chunk.text` quand il est présent :
+    pour un bloc code/image/formule enrichi par `/rag-nottext`, ce champ ne
+    contient QUE sa description en langage naturel, jamais le verbatim
+    (LaTeX/code/légende d'image) — mélanger les deux dilue la similarité
+    d'embedding avec une question en français (vérifié empiriquement, voir
+    `chunk.py`). Le contenu verbatim reste intact dans `chunk.text`, stocké
+    et restitué tel quel à la citation — seul le texte embeddé change."""
+    body = chunk.embed_text or chunk.text
     if chunk.heading_trail:
         breadcrumb = " > ".join(chunk.heading_trail)
-        return f"{breadcrumb}\n\n{chunk.text}"
-    return chunk.text
+        return f"{breadcrumb}\n\n{body}"
+    return body
 
 
 def embed_texts(texts: list[str], *, model_name: str = DEFAULT_MODEL_NAME) -> list[list[float]]:

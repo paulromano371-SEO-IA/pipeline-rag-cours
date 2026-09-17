@@ -161,7 +161,7 @@ class ExtractionResult:
     # Parmi `n_formula_regions`, nombre de zones effectivement appariees a
     # une formule de course.tex (voir match_formula_runs_to_tex) et donc
     # recopiees telles quelles (verite terrain) plutot que rasterisees + a
-    # OCRiser plus tard par /rag-images. Les zones non appariees (course.tex
+    # OCRiser plus tard par /rag-nottext. Les zones non appariees (course.tex
     # absent, ou contexte de prose voisin ne correspondant a aucune formule
     # source — souvent un faux positif du detecteur PDF, voir SKILL.md) sont
     # rasterisees individuellement, sans jamais degrader les zones deja
@@ -821,7 +821,7 @@ def _materialize_formula_runs_as_images(
     output_dir: Path,
 ) -> tuple[list[_Element], list[ExtractedImage]]:
     """Rasterise chaque run et le sauvegarde comme image native, exactement
-    comme les illustrations déjà intégrées au PDF : c'est `/rag-images`
+    comme les illustrations déjà intégrées au PDF : c'est `/rag-nottext`
     (description + OCR/pix2tex, avec ses propres garde-fous) qui la traite
     ensuite. Chemin de repli utilisé quand `course.tex` est absent, ou que le
     nombre de formules qui y sont détectées ne correspond pas au nombre de

@@ -2,7 +2,7 @@
 agent autonome) : un fichier JSON par document (`rag/status.json`), sans
 verrou inter-processus (usage séquentiel, une commande à la fois).
 
-Étapes suivies : extraction, images, chunking, indexation_vectorielle,
+Étapes suivies : extraction, nottext, chunking, indexation_vectorielle,
 extraction_concepts, graphe.
 """
 
@@ -12,7 +12,7 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-STAGES = ["extraction", "images", "chunking", "indexation_vectorielle", "extraction_concepts", "graphe"]
+STAGES = ["extraction", "nottext", "chunking", "indexation_vectorielle", "extraction_concepts", "graphe"]
 
 STATUS_FILENAME = "status.json"
 

@@ -1,6 +1,6 @@
 ---
 name: ragpipeline
-description: Enchaine tout le pipeline RAG sur un livre/support, de bout en bout, en invoquant successivement /cours-condense, /rag-extraction, /rag-images, /rag-chunking, /rag-index, /rag-concepts et /rag-graphe. Usage: /ragpipeline <chemin_vers_livre.pdf> [--from ETAPE] [--force]. Declenche aussi sur "fais entrer ce livre dans le RAG", "ingere ce document dans la base de connaissances".
+description: Enchaine tout le pipeline RAG sur un livre/support, de bout en bout, en invoquant successivement /cours-condense, /rag-extraction, /rag-nottext, /rag-chunking, /rag-index, /rag-concepts et /rag-graphe. Usage: /ragpipeline <chemin_vers_livre.pdf> [--from ETAPE] [--force]. Declenche aussi sur "fais entrer ce livre dans le RAG", "ingere ce document dans la base de connaissances".
 ---
 
 # /ragpipeline — Orchestrateur du pipeline RAG complet
@@ -10,7 +10,7 @@ comme une commande separee (pas un agent autonome unique) pour garder
 chaque etape dans un contexte frais et borne en tokens :
 
 ```
-/cours-condense -> /rag-extraction -> /rag-images -> /rag-chunking -> /rag-index -> /rag-concepts -> /rag-graphe
+/cours-condense -> /rag-extraction -> /rag-nottext -> /rag-chunking -> /rag-index -> /rag-concepts -> /rag-graphe
 ```
 
 ## Emplacements standardises (a respecter strictement)
@@ -33,7 +33,7 @@ chaque etape dans un contexte frais et borne en tokens :
                                  pas modifie, cette redirection se fait par une
                                  instruction ajoutee a son invocation (voir etape 1)
     work/<document_id>/         fichiers intermediaires PAR DOCUMENT du reste du
-                                 pipeline (pivot.md, images/, images_meta.json,
+                                 pipeline (pivot.md, images/, nottext_meta.json,
                                  chunks.json, concepts.json, status.json, meta.json)
     db/vector/                    base Chroma UNIQUE, commune a tout le corpus
     db/graph/                      graphe Kuzu UNIQUE, commun a tout le corpus
@@ -87,11 +87,14 @@ ligne.
    images, ecrits dans `rag_data/work/<document_id>/`. Note le
    `document_id` affiche : reutilise-le (ou le meme chemin de PDF) pour
    toutes les etapes suivantes.
-3. **`/rag-images <document_id_ou_pdf>`** — nomme, decrit (langage naturel)
-   et OCRise (LaTeX pour les formules, texte pour le reste) chaque image
-   extraite, puis enrichit `pivot.md` en consequence — sans cette etape, le
-   contenu des images (en particulier une formule rendue en image) reste
-   invisible a la recherche vectorielle et au graphe de concepts.
+3. **`/rag-nottext <document_id_ou_pdf>`** — decrit en langage naturel
+   chaque image (avec OCR/LaTeX adapte, nommage explicite), bloc de code et
+   formule d'affichage deja en LaTeX, puis enrichit `pivot.md` en
+   consequence — sans cette etape, ce contenu (en particulier une formule,
+   qu'elle soit restee image ou deja en LaTeX) reste invisible a la
+   recherche vectorielle et au graphe de concepts, un modele d'embedding
+   texte ne rapprochant quasiment jamais une question en francais d'un
+   verbatim LaTeX/code/image brut (verifie empiriquement).
 4. **`/rag-chunking <document_id_ou_pdf>`** — chunks.json.
 5. **`/rag-index <document_id_ou_pdf>`** — indexation vectorielle (base
    partagee `rag_data/db/vector/`).
@@ -106,7 +109,7 @@ saute son propre travail si deja `done` (sauf `--force`). Pour reprendre un
 pipeline interrompu, relance simplement `/ragpipeline` sur le meme fichier
 source : les etapes deja faites se sautent d'elles-memes.
 
-`--from ETAPE` (valeurs : `courscondense`, `extraction`, `images`, `chunking`,
+`--from ETAPE` (valeurs : `courscondense`, `extraction`, `nottext`, `chunking`,
 `index`, `concepts`, `graphe`) force le redemarrage a partir de cette etape
 avec `--force`, utile si un changement en amont (ex. nouveau modele
 d'embedding) doit se repropager sans tout refaire depuis `courscondense`.

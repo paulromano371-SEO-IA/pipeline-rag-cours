@@ -4,7 +4,8 @@ Usage:
     python run.py <pdf_condense | document_id | chemin_dossier_travail | pivot.md> [--force] [--target-tokens N] [--overlap-blocks N]
 
 Ecrit dans <racine_projet>/rag_data/work/<document_id>/ :
-    chunks.json   liste des chunks (index, texte, fil d'ariane, tokens, has_code)
+    chunks.json   liste des chunks (index, texte, texte embeddé, fil d'ariane,
+                  tokens, has_code)
     status.json   suivi de l'etape "chunking"
 """
 from __future__ import annotations

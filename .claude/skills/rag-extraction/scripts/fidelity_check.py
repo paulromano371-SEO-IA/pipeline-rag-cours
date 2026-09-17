@@ -46,7 +46,12 @@ from tex_source import (
 )
 
 _FENCE_RE = re.compile(r"```\n(.*?)\n```", re.DOTALL)
-_IMAGE_REF_RE = re.compile(r"!\[Illustration\]\(([^)]+)\)")
+# Alt-text quelconque (jamais seulement "Illustration" en dur) : cette
+# fonction ne s'execute aujourd'hui qu'avant /rag-nottext (alt-text toujours
+# "Illustration" a ce stade), mais rester generique cote regex ne coute rien
+# et evite un piege si ce controle est un jour reexecute apres enrichissement
+# (alt-text alors remplace par une description, voir rag-nottext/scripts/run.py).
+_IMAGE_REF_RE = re.compile(r"!\[[^\]]*\]\(([^)]+)\)")
 _MD_HEADING_RE = re.compile(r"^#+\s+(.*)$", re.MULTILINE)
 _COMMAND_RE = re.compile(r"\\[a-zA-Z]+\*?")
 _FIGURE_ENV_RE = re.compile(r"\\begin\{figure\}.*?\\end\{figure\}", re.DOTALL)

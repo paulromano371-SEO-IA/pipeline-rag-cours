@@ -53,7 +53,15 @@ def main() -> int:
 
     raw_chunks = json.loads(chunks_path.read_text(encoding="utf-8"))
     chunks = [Chunk(**d) for d in raw_chunks]
-    indexable_chunks = [c for c in chunks if not is_noise_text(c.text)]
+    # has_code/has_formula exemptes du filtre anti-bruit : un extrait de
+    # code ou une formule LaTeX a legitimement un ratio alphabetique bas
+    # (beaucoup de symboles/operateurs), ce n'est jamais un signe d'echec
+    # d'extraction contrairement a ce que ce filtre detecte d'habitude (voir
+    # quality.py:is_noise_text) — sans cette exemption, un bloc de code ou
+    # une formule pas encore traitee par /rag-nottext (ou dont le traitement
+    # a echoue) risquait d'etre exclue silencieusement de l'index, a
+    # l'oppose du but meme de /rag-nottext.
+    indexable_chunks = [c for c in chunks if c.has_code or c.has_formula or not is_noise_text(c.text)]
 
     document_id = _document_id_of(work_dir)
     document = DocumentMetadata(document_id=document_id, source_path=str(work_dir / "pivot.md"))
