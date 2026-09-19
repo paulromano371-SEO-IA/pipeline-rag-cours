@@ -25,6 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "_rag_lib"))
 from chunk import Chunk
 from quality import is_noise_text
 from concepts import extract_concepts, ConceptExtractionError
+import checks
 import paths
 import status as status_lib
 
@@ -37,6 +38,11 @@ def main() -> int:
         "--reset",
         action="store_true",
         help="Supprime concepts.json et l'entree extraction_concepts de status.json avant de regenerer entierement (ex. apres un changement du prompt d'extraction).",
+    )
+    parser.add_argument(
+        "--batch-size", type=int, default=None,
+        help="nombre max de chunks a envoyer a claude -p dans cette invocation (defaut : tous) — "
+        "relancer la meme commande (SANS --force/--reset) tant que le code de sortie est 3",
     )
     args = parser.parse_args()
 
@@ -64,6 +70,11 @@ def main() -> int:
         print(f"deja fait (extraction_concepts): {concepts_path}")
         return 0
 
+    pre = checks.check_input("concepts", work_dir)
+    print(pre.report())
+    if not pre.ok:
+        return 1
+
     raw_chunks = json.loads(chunks_path.read_text(encoding="utf-8"))
     chunks = [Chunk(**d) for d in raw_chunks]
 
@@ -90,18 +101,33 @@ def main() -> int:
 
     n_skipped = 0
     n_concepts = sum(len(r["mentions"]) for r in results)
+
+    indexable = [c for c in chunks if not is_noise_text(c.text)]
+    pending_at_start = [c for c in indexable if c.index not in processed_indices]
+    print(
+        f"--- Lot en cours : "
+        f"{len(pending_at_start) if args.batch_size is None else min(args.batch_size, len(pending_at_start))} "
+        f"chunk(s) sur {len(pending_at_start)} restant(s) ---"
+    )
+
+    attempts = 0
+    successes = 0
     for chunk in chunks:
         if chunk.index in processed_indices:
             continue
         if is_noise_text(chunk.text):
             n_skipped += 1
             continue
+        if args.batch_size is not None and attempts >= args.batch_size:
+            break
+        attempts += 1
         try:
             mentions = extract_concepts(chunk.text)
         except ConceptExtractionError as exc:
             print(f"  chunk {chunk.index}: extraction ignoree ({exc})", file=sys.stderr)
             n_skipped += 1
             continue
+        successes += 1
         n_concepts += len(mentions)
         results.append({"chunk_index": chunk.index, "mentions": [asdict(m) for m in mentions]})
         # Checkpoint apres CHAQUE chunk traite avec succes (pas seulement a
@@ -109,12 +135,49 @@ def main() -> int:
         # progression, et la reprise ci-dessus s'appuie exactement sur cet
         # etat intermediaire.
         concepts_path.write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
+        print(f">>> Progression : {len(results)}/{len(indexable)} chunk(s) traites")
 
-    status_lib.mark_stage(work_dir, "extraction_concepts", "done", n_concepts=n_concepts, chunks_ignores=n_skipped)
+    if not concepts_path.exists():
+        concepts_path.write_text("[]", encoding="utf-8")  # aucun chunk n'a abouti : le controle ci-dessous le dira
 
-    print(f"OK: {n_concepts} mention(s) de concept sur {len(chunks) - n_skipped} chunk(s) ({n_skipped} ignore(s))")
+    # Lot partiel : il reste des chunks ET ce lot a fait des progres. Un lot ou
+    # RIEN n'a abouti termine le traitement (comme /rag-nottext) : un chunk en
+    # echec reste "pending", donc sans cette sortie le code 3 boucle
+    # indefiniment sur un chunk qui echoue a chaque tentative — le controle de
+    # sortie ci-dessous tranche alors (bloquant si > 5 % de chunks sans concepts).
+    done_now = {r["chunk_index"] for r in results}
+    still_pending = [c for c in indexable if c.index not in done_now]
+    if args.batch_size is not None and still_pending and successes > 0:
+        # "failed" + detail "lot partiel" a chaque lot intermediaire : un
+        # --force/--reset repart d'un ancien "done" (sans cette retrogradation
+        # la relance sans --force croirait l'etape terminee), et le detail
+        # reste a jour du nombre de chunks restants.
+        status_lib.mark_stage(
+            work_dir, "extraction_concepts", "failed",
+            detail=f"lot partiel en cours : {len(still_pending)} chunk(s) restant(s)",
+        )
+        print(
+            f"Lot de {attempts} chunk(s) traite(s) ({successes} reussi(s)), {len(still_pending)} restant(s) — "
+            "relance exactement la meme commande (sans --force/--reset) pour continuer "
+            "(etape non terminee, status.json pas encore marque 'done')."
+        )
+        return 3
+
+    # `chunks_ignores` melange bruit (normal) et echecs d'extraction (anormal) :
+    # le controle recalcule les deux separement a partir de concepts.json, ce
+    # qui reste exact meme apres une ou plusieurs reprises.
+    post = checks.check_output("concepts", work_dir)
+    print(post.report())
+    status_lib.mark_stage(
+        work_dir, "extraction_concepts", "done" if post.ok else "failed", detail=post.detail(),
+        n_concepts=n_concepts, chunks_ignores=n_skipped,
+        n_noise=post.metrics.get("n_noise"), n_failed=post.metrics.get("n_failed"),
+        verdict=post.verdict, verdict_reasons=post.blocking,
+    )
+
+    print(f"{'OK' if post.ok else 'BLOQUANT'}: {n_concepts} mention(s) de concept sur {len(chunks) - n_skipped} chunk(s) ({n_skipped} ignore(s))")
     print(f"concepts: {concepts_path}")
-    return 0
+    return 0 if post.ok else 2
 
 
 if __name__ == "__main__":

@@ -127,9 +127,14 @@ appel :
 
 - Chaque invocation traite au plus N éléments, insère leurs descriptions
   dans `pivot.md`, ajoute leurs entrées à `nottext_meta.json`, puis
-  s'arrête — code de sortie **3**, distinct de 0 (tout terminé, aucun
-  échec) et 1 (tout terminé, au moins un échec) : signale explicitement
-  "il reste du travail, ce n'est pas une erreur".
+  s'arrête — code de sortie **3**, distinct de 0 (tout terminé, verdict
+  `ok`), 2 (tout terminé, verdict BLOQUANT : au moins un élément en échec ou
+  sans description) et 1 (erreur technique ou prérequis non satisfait) :
+  signale explicitement "il reste du travail, ce n'est pas une erreur".
+- **Un lot où AUCUN élément n'aboutit termine le traitement** (code `2`, sans
+  attendre les autres lots) : un élément en échec reste "pending", donc sans
+  cette règle le code `3` bouclerait indéfiniment sur un élément qui échoue à
+  chaque tentative.
 - **Relance exactement la même commande** (même `--batch-size`) pour
   continuer : le lot suivant retrouve automatiquement où le précédent s'est
   arrêté en relisant `pivot.md` (quels éléments portent déjà
@@ -144,13 +149,13 @@ appel :
   décision à soumettre — relance immédiatement la même commande dans le
   même tour, encore et encore, tant que 3 est retourné. Le seul cas qui
   justifie de s'arrêter et de demander quoi que ce soit à la personne, c'est
-  un `n_errors` non nul dans le rapport final (code de sortie 1, voir
+  un verdict bloquant dans le rapport final (code de sortie 2, voir
   "Après exécution" — section "Échecs") : la personne n'a pas à valider
   chaque lot intermédiaire, seulement à être informée si des éléments
   finissent réellement en échec.
 - Avant d'enchaîner sur `/rag-chunking` ou de produire le compte-rendu
-  final, assure-toi seulement que le code de sortie est bien 0 ou 1 (voir
-  "Après exécution").
+  final, assure-toi seulement que le code de sortie est bien 0, 1 ou 2 (voir
+  "Après exécution") — `0` est le seul qui autorise d'enchaîner.
 - `--force` sur un traitement par lots interrompu repart intégralement de
   zéro (même comportement qu'un traitement en un seul lot) : jamais de
   reprise partielle combinée à un `--force`.
@@ -315,12 +320,20 @@ quel**, jamais une reconstruction manuelle à partir de `nottext_meta.json`
 à toi de le recalculer ni de le reformuler (même principe que
 `rag-extraction/scripts/run.py:_build_report`, voir son SKILL.md).
 
+**Contrôles** (`_rag_lib/checks.py`, affichés avant le rapport) :
+- **Entrée** (code `1` si échec) : `pivot.md` non vide, `/rag-extraction`
+  terminé sans bloquant, images référencées présentes dans `images/`, CLI
+  `claude` disponible.
+- **Sortie** (code `2` et étape `failed` si échec) : aucun élément en échec,
+  aucun élément sans description dans `pivot.md`, identifiants uniques dans
+  `nottext_meta.json`, aucune image référencée absente. Le verdict est écrit
+  dans `status.json`.
+
 Une décision reste la tienne, le rapport ne la prend jamais à ta place :
-un ou plusieurs échecs dans le rapport ⇒ **arrête-toi avant de proposer
-d'enchaîner sur `/rag-chunking`**, jamais de description ou de transcription
-inventée pour combler un élément en échec — le rapport te dit SI ce cas se
-présente (section "Échecs"), l'arrêt lui-même reste ton choix à faire, pas
-celui du script.
+un verdict bloquant (code `2`, un ou plusieurs échecs dans le rapport) ⇒
+**arrête-toi avant de proposer d'enchaîner sur `/rag-chunking`**, jamais de
+description ou de transcription inventée pour combler un élément en échec —
+le rapport te dit SI ce cas se présente (section "Échecs").
 
 N'invente jamais de description ou de transcription pour un élément dont le
 contenu reste ambigu après lecture — dans ce cas, la description elle-même

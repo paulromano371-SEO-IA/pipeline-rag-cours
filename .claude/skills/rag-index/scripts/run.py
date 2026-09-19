@@ -18,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "_rag_lib"))
 from chunk import Chunk
 from quality import is_noise_text
 from vector_store import DocumentMetadata, index_chunks
+import checks
 import paths
 import status as status_lib
 
@@ -48,8 +49,21 @@ def main() -> int:
         return 1
 
     if status_lib.is_done(work_dir, "indexation_vectorielle") and not args.force:
-        print("deja fait (indexation_vectorielle)")
-        return 0
+        # `done` dans status.json ne prouve rien sur la base elle-meme (elle a
+        # pu etre supprimee/corrompue depuis) : verifie qu'elle contient bien
+        # ce document avant de sauter le travail, sinon reindexe.
+        existing = checks.check_output("index", work_dir, deep=False)
+        if existing.ok:
+            print("deja fait (indexation_vectorielle)")
+            print(existing.report())
+            return 0
+        print("status.json dit 'done' mais la base vectorielle ne le confirme pas — reindexation :")
+        print(existing.report())
+
+    pre = checks.check_input("index", work_dir)
+    print(pre.report())
+    if not pre.ok:
+        return 1
 
     raw_chunks = json.loads(chunks_path.read_text(encoding="utf-8"))
     chunks = [Chunk(**d) for d in raw_chunks]
@@ -68,15 +82,21 @@ def main() -> int:
 
     n_indexed = index_chunks(indexable_chunks, document, db_path=paths.VECTOR_DB_PATH)
 
+    # Meme process que l'indexation : le modele d'embedding est deja en
+    # cache, la requete de test ne recharge rien.
+    post = checks.check_output("index", work_dir, deep=True, n_indexed=n_indexed)
+    print(post.report())
+
     status_lib.mark_stage(
-        work_dir, "indexation_vectorielle", "done",
+        work_dir, "indexation_vectorielle", "done" if post.ok else "failed", detail=post.detail(),
         n_indexed=n_indexed, n_ignored=len(chunks) - len(indexable_chunks), document_id=document_id,
+        verdict=post.verdict, verdict_reasons=post.blocking,
     )
 
-    print(f"OK: {n_indexed} chunk(s) indexe(s) ({len(chunks) - len(indexable_chunks)} ignore(s) comme bruit)")
+    print(f"{'OK' if post.ok else 'BLOQUANT'}: {n_indexed} chunk(s) indexe(s) ({len(chunks) - len(indexable_chunks)} ignore(s) comme bruit)")
     print(f"document_id: {document_id}")
     print(f"base vectorielle: {paths.VECTOR_DB_PATH}")
-    return 0
+    return 0 if post.ok else 2
 
 
 if __name__ == "__main__":

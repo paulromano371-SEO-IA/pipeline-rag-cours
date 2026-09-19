@@ -70,6 +70,7 @@ for _stream in (sys.stdout, sys.stderr):
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "_rag_lib"))
 
+import checks
 import chunk as chunk_mod
 import paths
 import status as status_lib
@@ -654,6 +655,11 @@ def main() -> int:
         print(f"deja fait (nottext): {meta_path}")
         return 0
 
+    pre = checks.check_input("nottext", work_dir)
+    print(pre.report())
+    if not pre.ok:
+        return 1
+
     if args.force:
         try:
             reverted = _revert_previous_run(work_dir, meta_path)
@@ -694,17 +700,7 @@ def main() -> int:
             # element non-textuel serait reexamine en entier a chaque
             # relance sans jamais pouvoir etre reconnu comme deja fait.
             meta_path.write_text("[]", encoding="utf-8")
-        n_images = sum(1 for e in previous_entries if e["type"] in ("image_formule", "image_generale"))
-        n_code = sum(1 for e in previous_entries if e["type"] == "code")
-        n_formules_texte = sum(1 for e in previous_entries if e["type"] == "formule_texte")
-        n_errors = sum(1 for e in previous_entries if e["erreur"])
-        status_lib.mark_stage(
-            work_dir, "nottext", "done" if n_errors == 0 else "failed",
-            detail="" if n_errors == 0 else f"{n_errors} element(s) en echec",
-            n_images=n_images, n_code=n_code, n_formules_texte=n_formules_texte, n_errors=n_errors,
-        )
-        print(_build_report(work_dir.name, previous_entries, meta_path=meta_path))
-        return 1 if n_errors else 0
+        return _finish(work_dir, previous_entries, meta_path)
 
     batch = pending_blocks if args.batch_size is None else pending_blocks[: args.batch_size]
 
@@ -743,6 +739,16 @@ def main() -> int:
     # certains elements concluait "done" en laissant un element jamais
     # traite, sans que rien ne le signale).
     still_pending = _find_pending_blocks(chunk_mod.split_into_blocks(updated_markdown))
+    if still_pending and new_entries and all(e["erreur"] for e in new_entries):
+        # Aucun progres possible : tout le lot vient d'echouer, et un element
+        # en echec reste "pending" (voir plus haut) — sans cette sortie, le
+        # code 3 ("relance la meme commande") boucle indefiniment sur un
+        # element qui echoue a chaque tentative.
+        print(
+            f"Aucun des {len(batch)} element(s) du lot n'a abouti ({len(still_pending)} restant(s), "
+            "tous en echec) — arret : relancer la meme commande ne changerait rien."
+        )
+        return _finish(work_dir, all_entries, meta_path)
     if still_pending:
         print(
             f"Lot de {len(batch)} element(s) traite(s), {len(still_pending)} restant(s) — "
@@ -751,20 +757,31 @@ def main() -> int:
         )
         return 3
 
-    n_images = sum(1 for e in all_entries if e["type"] in ("image_formule", "image_generale"))
-    n_code = sum(1 for e in all_entries if e["type"] == "code")
-    n_formules_texte = sum(1 for e in all_entries if e["type"] == "formule_texte")
-    n_errors = sum(1 for e in all_entries if e["erreur"])
+    return _finish(work_dir, all_entries, meta_path)
+
+
+def _finish(work_dir: Path, entries: list[dict], meta_path: Path) -> int:
+    """Fin de traitement (plus aucun element en attente) : controle de
+    sortie, statut, rapport. Code 0 si tout est bon, 2 (BLOQUANT) sinon —
+    jamais 1, reserve aux erreurs techniques/prerequis (voir `_rag_lib/checks.py`)."""
+    n_images = sum(1 for e in entries if e["type"] in ("image_formule", "image_generale"))
+    n_code = sum(1 for e in entries if e["type"] == "code")
+    n_formules_texte = sum(1 for e in entries if e["type"] == "formule_texte")
+    n_errors = sum(1 for e in entries if e["erreur"])
+
+    post = checks.check_output("nottext", work_dir)
+    print(post.report())
 
     status_lib.mark_stage(
-        work_dir, "nottext", "done" if n_errors == 0 else "failed",
-        detail="" if n_errors == 0 else f"{n_errors} element(s) en echec",
+        work_dir, "nottext", "done" if post.ok else "failed", detail=post.detail(),
         n_images=n_images, n_code=n_code, n_formules_texte=n_formules_texte, n_errors=n_errors,
+        verdict=post.verdict, verdict_reasons=post.blocking,
     )
 
-    print(_build_report(work_dir.name, all_entries, meta_path=meta_path))
+    # Rapport en DERNIER : c'est lui que le SKILL demande de relayer tel quel.
+    print(_build_report(work_dir.name, entries, meta_path=meta_path))
 
-    return 1 if n_errors else 0
+    return 0 if post.ok else 2
 
 
 if __name__ == "__main__":

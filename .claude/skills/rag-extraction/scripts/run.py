@@ -28,6 +28,7 @@ from convert import extract_native_pdf
 from quality import assess_extraction_quality, count_control_chars, QualityIssue
 from ligature_repair import auto_repair_ligatures
 from fidelity_check import run_fidelity_check
+import checks
 import paths
 import status as status_lib
 
@@ -59,6 +60,11 @@ def main() -> int:
         metadata = status_lib.load_status(work_dir).get("extraction", {}).get("metadata", {})
         has_blocking = bool(metadata.get("quality_blocking_issues")) or bool(metadata.get("fidelity_blocking_issues"))
         return 2 if has_blocking else 0
+
+    pre = checks.check_extraction_input(pdf_path)
+    print(pre.report())
+    if not pre.ok:
+        return 1
 
     page_range = None
     if args.pages:
@@ -126,8 +132,16 @@ def main() -> int:
         page_range_active=page_range is not None,
     )
 
+    post = checks.check_output(
+        "extraction", work_dir,
+        quality_blocking=len(quality_report.blocking_issues),
+        fidelity_blocking=len(fidelity_report.blocking_issues),
+    )
+    print(post.report())
+
     status_lib.mark_stage(
         work_dir, "extraction", "done",
+        verdict=post.verdict, verdict_reasons=post.blocking,
         pages=len(result.pages), images=len(result.images),
         quality_issues=len(quality_report.issues), ligature_repairs=ligature_repairs,
         symbol_pairs_repaired=symbol_pairs_repaired,
@@ -161,7 +175,7 @@ def main() -> int:
     # du rapport : lequel des deux volets est bloquant, et le detail par
     # ligne, restent uniquement dans le texte affiche.
     has_blocking = bool(quality_report.blocking_issues) or bool(fidelity_report.blocking_issues)
-    return 2 if has_blocking else 0
+    return 2 if (has_blocking or not post.ok) else 0
 
 
 def _build_report(

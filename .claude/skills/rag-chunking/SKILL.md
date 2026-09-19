@@ -1,124 +1,130 @@
 ---
 name: rag-chunking
 description: >-
-  Decoupe un pivot markdown (produit par /rag-extraction et enrichi par
+  Découpe un pivot markdown (produit par /rag-extraction et enrichi par
   /rag-nottext) en chunks embeddables, sans jamais couper un bloc de code,
   une image ou une formule.
   Usage: /rag-chunking <pdf_condense_ou_document_id>.
-  Quatrieme etape du pipeline RAG.
+  Quatrième étape du pipeline RAG.
 ---
 
-# /rag-chunking — Etape 4 du pipeline RAG
+# /rag-chunking — Étape 4 du pipeline RAG
 
-Decoupe le markdown pivot en chunks (~400 tokens cible, recouvrement d'un
-bloc) prets a etre embeddes. Script deterministe, aucun appel LLM. Le
-comptage de tokens utilise le tokenizer reel du modele d'embedding
-(`BAAI/bge-m3`, voir `_rag_lib/chunk.py`) — jamais un proxy generique type
-tiktoken, dont le decompte n'a aucun rapport avec la vraie limite du modele
+Découpe le markdown pivot en chunks (~400 tokens cible, recouvrement d'un
+bloc) prêts à être embeddés. Script déterministe, aucun appel LLM. Le
+comptage de tokens utilise le tokenizer réel du modèle d'embedding
+(`BAAI/bge-m3`, voir `_rag_lib/chunk.py`) — jamais un proxy générique type
+tiktoken, dont le décompte n'a aucun rapport avec la vraie limite du modèle
 qui embeddera ensuite ces chunks (`/rag-index`).
 
-Un bloc code/image/formule directement suivi de la description generee par
+Un bloc code/image/formule directement suivi de la description générée par
 `/rag-nottext` (marqueur `DESCRIPTION_MARKER`, voir `_rag_lib/chunk.py`) est
-fusionne avec elle en une seule unite atomique : le texte du chunk
-(`text`, utilise pour la citation) garde le verbatim + la description, mais
-le texte reellement embeddé (`embed_text`, utilise par `/rag-index`) ne
-retient QUE la description — jamais le LaTeX/code/legende brut, dont on a
-verifie empiriquement qu'il dilue la similarite d'embedding avec une
-question en francais au lieu de la restaurer. Un bloc pas encore traite par
-`/rag-nottext` (ou dont le traitement a echoue) n'a pas de description a
+fusionné avec elle en une seule unité atomique : le texte du chunk
+(`text`, utilisé pour la citation) garde le verbatim + la description, mais
+le texte réellement embeddé (`embed_text`, utilisé par `/rag-index`) ne
+retient QUE la description — jamais le LaTeX/code/légende brut, dont on a
+vérifié empiriquement qu'il dilue la similarité d'embedding avec une
+question en français au lieu de la restaurer. Un bloc pas encore traité par
+`/rag-nottext` (ou dont le traitement a échoué) n'a pas de description à
 fusionner : `embed_text` retombe alors sur le texte brut du bloc.
 
-## Execution
+## Exécution
 
-Toujours en foreground, bloquant jusqu'a completion — jamais via
-`run_in_background` ni aucun mecanisme async. Contrairement a d'autres
-etapes du pipeline, ce script ne fait aucun appel `claude -p` : la
-contention entre appels imbriques n'est donc pas la raison ici. La vraie
-raison : deux invocations en parallele sur le meme `document_id` ecriraient
+Toujours en foreground, bloquant jusqu'à complétion — jamais via
+`run_in_background` ni aucun mécanisme async. Contrairement à d'autres
+étapes du pipeline, ce script ne fait aucun appel `claude -p` : la
+contention entre appels imbriqués n'est donc pas la raison ici. La vraie
+raison : deux invocations en parallèle sur le même `document_id` écriraient
 concurremment `chunks.json`/`status.json`, avec un risque de corruption ou
-d'ecrasement partiel — jamais deux commandes du pipeline en parallele sur le
-meme document.
+d'écrasement partiel — jamais deux commandes du pipeline en parallèle sur le
+même document.
 
-**Interdiction de deleguer a un sous-agent** (outil `Agent`) la lecture ou la
-verification de `chunks.json` — pas pour eviter une contention `claude -p`
-(inexistante ici), mais pour que le compte-rendu structure ci-dessous (en
-particulier la distinction bloquant/indicatif) soit produit par la meme
-instance qui vient d'executer le script, dans le meme tour de conversation,
-plutot que redecide independamment par un sous-agent.
+**Interdiction de déléguer à un sous-agent** (outil `Agent`) la lecture ou la
+vérification de `chunks.json` — pas pour éviter une contention `claude -p`
+(inexistante ici), mais pour que le compte-rendu structuré ci-dessous (en
+particulier la distinction bloquant/indicatif) soit produit par la même
+instance qui vient d'exécuter le script, dans le même tour de conversation,
+plutôt que redécidé indépendamment par un sous-agent.
 
 ```bash
 "<racine_projet>/.venv-rag/Scripts/python.exe" "<racine_projet>/.claude/skills/rag-chunking/scripts/run.py" "<pdf_condense_ou_document_id_ou_dossier_de_travail>"
 ```
 
-Le script accepte indifferemment : le meme chemin de PDF condense passe a
-`/rag-extraction`, le `document_id` qu'il a affiche, ou directement le
+Le script accepte indifféremment : le même chemin de PDF condensé passé à
+`/rag-extraction`, le `document_id` qu'il a affiché, ou directement le
 dossier `rag_data/work/<document_id>/`.
 
 Options :
 - `--force`
-- `--target-tokens N` (defaut 400)
-- `--overlap-blocks N` (defaut 1)
+- `--target-tokens N` (défaut 400)
+- `--overlap-blocks N` (défaut 1)
 
-## Prerequis
+## Prérequis
 
 `rag_data/work/<document_id>/pivot.md` doit exister (produit par
-`/rag-extraction`). Si absent, le script echoue explicitement — relance
+`/rag-extraction`). Si absent, le script échoue explicitement — relance
 `/rag-extraction` d'abord.
 
 ## Idempotence
 
-Sans `--force` : si `status.json` contient deja `{"chunking": {"status": "done"}}`
+Sans `--force` : si `status.json` contient déjà `{"chunking": {"status": "done"}}`
 et que `chunks.json` existe, le script ne fait rien — il affiche
-`deja fait (chunking): <chemin>` et s'arrete (code 0). Avec `--force` :
-`chunks.json` est entierement reecrit en un seul `write_text` (jamais un
-ajout ni une mutation incrementale) — un `--force` repete ne peut donc
-jamais accumuler ou dupliquer du contenu d'un run a l'autre.
+`deja fait (chunking): <chemin>` et s'arrête (code 0). Avec `--force` :
+`chunks.json` est entièrement réécrit en un seul `write_text` (jamais un
+ajout ni une mutation incrémentale) — un `--force` répété ne peut donc
+jamais accumuler ou dupliquer du contenu d'un run à l'autre.
 
 ## Sortie
 
 `rag_data/work/<document_id>/chunks.json` — liste de chunks (index, texte,
-texte embeddé, fil d'ariane des titres, nombre de tokens, presence de code)
-+ `status.json` mis a jour. Toujours dans le dossier de travail centralise,
-jamais a cote du PDF source.
+texte embeddé, fil d'ariane des titres, nombre de tokens, présence de code)
++ `status.json` mis à jour. Toujours dans le dossier de travail centralisé,
+jamais à côté du PDF source.
 
 ## Critère de sortie exploitable
 
-`/rag-index` et `/rag-concepts` ne verifient, dans leur code, que
+`/rag-index` et `/rag-concepts` ne vérifient, dans leur code, que
 l'existence de `chunks.json` — ni l'un ni l'autre ne relit `status.json`
-pour confirmer que l'etape `chunking` est marquee `done`. Le chunking est
-donc exploitable pour la suite des que `chunks.json` existe ; `status.json`
-ne sert qu'au suivi interne et a l'idempotence de cette etape elle-meme. Les
-deux restent synchronises en pratique ici (`chunks.json` est ecrit juste
-avant le marquage `done`, jamais apres un echec — voir Idempotence
-ci-dessus), mais ne suppose pas cette synchronisation pour d'autres etapes
-sans l'avoir verifiee dans leur code.
+pour confirmer que l'étape `chunking` est marquée `done`. Le chunking est
+donc exploitable pour la suite dès que `chunks.json` existe ; `status.json`
+ne sert qu'au suivi interne et à l'idempotence de cette étape elle-même. Les
+deux restent synchronisés en pratique ici (`chunks.json` est écrit juste
+avant le marquage `done`, jamais après un échec — voir Idempotence
+ci-dessus), mais ne suppose pas cette synchronisation pour d'autres étapes
+sans l'avoir vérifiée dans leur code.
 
 ## Blocs atomiques et recouvrement
 
-Un bloc atomique (code, image, formule) qui depasse `--target-tokens` a lui
-seul n'est jamais scinde — il reste entier dans son propre chunk, meme si
-celui-ci depasse la cible. Seul un bloc de prose peut etre scinde, sur des
-frontieres de phrase.
+Un bloc atomique (code, image, formule) qui dépasse `--target-tokens` à lui
+seul n'est jamais scindé — il reste entier dans son propre chunk, même si
+celui-ci dépasse la cible. Seul un bloc de prose peut être scindé, sur des
+frontières de phrase.
 
-`--overlap-blocks N` reporte les N derniers blocs du chunk qui vient d'etre
-decoupe vers le chunk suivant — **sauf les titres, toujours exclus du
-report** : si le dernier bloc d'un chunk est un titre, il n'est pas reporte,
-et `--overlap-blocks 1` peut donc ne reporter aucun bloc dans ce cas precis.
+`--overlap-blocks N` reporte les N derniers blocs du chunk qui vient d'être
+découpé vers le chunk suivant — **sauf les titres, toujours exclus du
+report** : si le dernier bloc d'un chunk est un titre, il n'est pas reporté,
+et `--overlap-blocks 1` peut donc ne reporter aucun bloc dans ce cas précis.
 
-## Apres execution
+## Après exécution
 
-Affiche un resume structure, dans cet ordre :
-1. un titre court ("Chunking termine — `<nom du document>`")
-2. une phrase de synthese chiffree : nombre de chunks produits, nombre moyen
+Affiche un résumé structuré, dans cet ordre :
+1. un titre court ("Chunking terminé — `<nom du document>`")
+2. une phrase de synthèse chiffrée : nombre de chunks produits, nombre moyen
    de tokens par chunk, nombre de chunks contenant du code, proportion de
    chunks dont le fil d'ariane des titres est vide
 
-**Distinction bloquant/indicatif, fixee ici :**
-- **bloquant** : `chunk_markdown` produit une liste vide — le script marque
-  deja l'etape `failed` dans `status.json` et retourne un code d'erreur non
-  nul. Dans ce cas, **arrete-toi et ne propose jamais d'enchainer sur
-  `/rag-index`**.
+**Contrôles d'entrée** (`_rag_lib/checks.py`, code de sortie `1` si échec) :
+`pivot.md` non vide, `/rag-extraction` sans bloquant, `/rag-nottext` terminé
+sans échec, et **aucun bloc code/image/formule sans description**
+(`DESCRIPTION_MARKER`) — leur texte brut dégraderait l'embedding.
+
+**Distinction bloquant/indicatif, fixée ici :**
+- **bloquant** (code de sortie `2`, étape marquée `failed`, verdict écrit
+  dans `status.json`) : `chunk_markdown` produit une liste vide, `chunks.json`
+  invalide (forme, index dupliqués), `n_chunks` différent du contenu du
+  fichier, ou bloc de code coupé/non refermé dans un chunk. Dans ce cas,
+  **arrête-toi et ne propose jamais d'enchaîner sur `/rag-index`**.
 - **indicatif** : fil d'ariane vide pour la plupart des chunks — signale-le,
-  mais sans bloquer la suite (l'extraction n'a probablement pas detecte les
-  titres sur ce document) : la recherche fonctionne quand meme, juste avec
+  mais sans bloquer la suite (l'extraction n'a probablement pas détecté les
+  titres sur ce document) : la recherche fonctionne quand même, juste avec
   moins de contexte.

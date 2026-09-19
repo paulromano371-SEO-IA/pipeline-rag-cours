@@ -194,6 +194,21 @@ class ConceptGraph:
             {"chunk_id": chunk_id, "concept_id": concept_id},
         )
 
+    def count_chunks(self, document_id: str) -> int:
+        """Nombre de noeuds `Chunk` de ce document (contrôle de sortie de /rag-graphe)."""
+        result = self._conn.execute(
+            "MATCH (ch:Chunk {document_id: $doc}) RETURN count(*)", {"doc": document_id}
+        )
+        return result.get_next()[0] if result.has_next() else 0
+
+    def count_mentions(self, document_id: str) -> int:
+        """Nombre de relations `MENTIONS` issues des chunks de ce document."""
+        result = self._conn.execute(
+            "MATCH (ch:Chunk {document_id: $doc})-[r:MENTIONS]->(:Concept) RETURN count(r)",
+            {"doc": document_id},
+        )
+        return result.get_next()[0] if result.has_next() else 0
+
     def all_concepts(self) -> list[ConceptRecord]:
         result = self._conn.execute(
             "MATCH (c:Concept) RETURN c.id, c.canonical_form, c.type, c.aliases, c.embedding"

@@ -284,6 +284,13 @@ script ne marque jamais l'étape `failed` : si le PDF source est introuvable,
 il s'arrête avant d'écrire `status.json` (rien à nettoyer, code de sortie
 `1`).
 
+**Contrôles d'entrée et de sortie** (`_rag_lib/checks.py`, affichés avant le
+rapport) : en entrée, PDF présent, non vide, lisible par PyMuPDF, avec au
+moins une page, `pyspellchecker` importable, `rag_data/work/` accessible en
+écriture (code `1` si échec) ; en sortie, `pivot.md` non vide, `meta.json`
+valide et cohérent avec le dossier, aucun bloquant qualité/fidélité (code
+`2`). Le verdict est écrit dans `status.json`.
+
 **Code de sortie** : `0` si aucun problème bloquant (qualité ou fidélité),
 `2` si au moins un `BLOQUANT` figure dans le rapport — y compris sur le
 chemin "déjà fait" ci-dessus, reconstruit à partir de `quality_blocking_issues`/

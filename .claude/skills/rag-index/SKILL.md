@@ -4,39 +4,39 @@ description: >-
   Embedde et indexe les chunks (produits par /rag-chunking) dans la base
   vectorielle locale (Chroma).
   Usage: /rag-index <pdf_condense_ou_document_id>.
-  Cinquieme etape du pipeline RAG.
+  Cinquième étape du pipeline RAG.
 ---
 
-# /rag-index — Etape 5 du pipeline RAG
+# /rag-index — Étape 5 du pipeline RAG
 
-Embedde chaque chunk (modele multilingue local via sentence-transformers,
-aucune cle API) et l'indexe dans une base Chroma partagee entre tous les
+Embedde chaque chunk (modèle multilingue local via sentence-transformers,
+aucune clé API) et l'indexe dans une base Chroma partagée entre tous les
 documents du corpus.
 Les chunks de bruit non textuel (motifs de hachures mal extraits d'un
-diagramme) sont exclus — critere exact (`_rag_lib/quality.py`,
-`is_noise_text`) : un chunk d'au moins 60 caracteres dont moins de 30% des
-caracteres non-espace sont alphabetiques. Script deterministe, aucun appel
+diagramme) sont exclus — critère exact (`_rag_lib/quality.py`,
+`is_noise_text`) : un chunk d'au moins 60 caractères dont moins de 30% des
+caractères non-espace sont alphabétiques. Script déterministe, aucun appel
 LLM.
 
-## Execution
+## Exécution
 
-Toujours en foreground, bloquant jusqu'a completion — jamais via
-`run_in_background` ni aucun mecanisme async. Contrairement a d'autres
-etapes, ce script ne fait aucun appel `claude -p` : la contention entre
-appels LLM imbriques n'est donc pas la raison ici. La vraie raison, verifiee
-empiriquement : deux processus qui initialisent en meme temps un
-`PersistentClient` Chroma sur un dossier de base **pas encore cree**
-entrent en course sur la creation du schema SQLite (`InternalError: table
+Toujours en foreground, bloquant jusqu'à complétion — jamais via
+`run_in_background` ni aucun mécanisme async. Contrairement à d'autres
+étapes, ce script ne fait aucun appel `claude -p` : la contention entre
+appels LLM imbriqués n'est donc pas la raison ici. La vraie raison, vérifiée
+empiriquement : deux processus qui initialisent en même temps un
+`PersistentClient` Chroma sur un dossier de base **pas encore créé**
+entrent en course sur la création du schéma SQLite (`InternalError: table
 collections already exists`, puis un client corrompu dans le processus
-perdant). Une fois la base deja initialisee par un premier run, des
-invocations concurrentes sur des documents differents n'ont pas reproduit
-l'erreur dans nos tests — mais rien ne garantit cette absence de risque a
-plus grande echelle : n'execute jamais deux invocations de `/rag-index` en
-parallele sur cette base partagee.
+perdant). Une fois la base déjà initialisée par un premier run, des
+invocations concurrentes sur des documents différents n'ont pas reproduit
+l'erreur dans nos tests — mais rien ne garantit cette absence de risque à
+plus grande échelle : n'exécute jamais deux invocations de `/rag-index` en
+parallèle sur cette base partagée.
 
-**Interdiction de deleguer a un sous-agent** (outil `Agent`) la lecture ou
-verification du resultat d'indexation — meme raison que ci-dessus (eviter
-toute execution concurrente sur la base partagee), pas une histoire de
+**Interdiction de déléguer à un sous-agent** (outil `Agent`) la lecture ou
+vérification du résultat d'indexation — même raison que ci-dessus (éviter
+toute exécution concurrente sur la base partagée), pas une histoire de
 contention `claude -p` puisqu'il n'y en a aucune ici.
 
 ```bash
@@ -45,57 +45,68 @@ contention `claude -p` puisqu'il n'y en a aucune ici.
 
 Options : `--force`.
 
-## Prerequis
+## Prérequis
 
 `rag_data/work/<document_id>/chunks.json` doit exister (produit par `/rag-chunking`).
 
 ## Idempotence
 
-Sans `--force` : si `status.json` contient deja
+Sans `--force` : si `status.json` contient déjà
 `{"indexation_vectorielle": {"status": "done"}}`, le script ne fait rien —
-quel que soit l'etat reel de la base Chroma. Contrairement a
-`/rag-chunking`/`/rag-extraction`, cette verification ne s'accompagne
-d'aucun controle d'existence d'un fichier de sortie (il n'y en a pas, la
-sortie vit dans la base partagee) : si la base Chroma est supprimee ou
+quel que soit l'état réel de la base Chroma. Contrairement à
+`/rag-chunking`/`/rag-extraction`, cette vérification ne s'accompagne
+d'aucun contrôle d'existence d'un fichier de sortie (il n'y en a pas, la
+sortie vit dans la base partagée) : si la base Chroma est supprimée ou
 corrompue mais que `status.json` dit encore `done`, le script sautera son
-travail a tort, sans que rien ne le detecte.
+travail à tort, sans que rien ne le détecte.
 
-Avec `--force` (ou lors d'un premier passage) : un re-import du meme
-`document_id` **remplace** entierement ses chunks existants dans la base —
-les anciennes entrees de ce document sont d'abord supprimees, puis les
-nouvelles inserees, pour qu'un document reindexe avec moins de chunks
-qu'auparavant ne laisse jamais d'entrees perimees orphelines (comportement
-verifie : sans cette suppression prealable, un simple upsert ne retire
+Avec `--force` (ou lors d'un premier passage) : un ré-import du même
+`document_id` **remplace** entièrement ses chunks existants dans la base —
+les anciennes entrées de ce document sont d'abord supprimées, puis les
+nouvelles insérées, pour qu'un document réindexé avec moins de chunks
+qu'auparavant ne laisse jamais d'entrées périmées orphelines (comportement
+vérifié : sans cette suppression préalable, un simple upsert ne retire
 jamais les ids qui ne sont plus fournis).
 
 ## Sortie
 
-Base vectorielle persistee dans `<racine_projet>/rag_data/db/vector/`
-(**base UNIQUE, commune a tout le corpus** — chaque document y ajoute ses
-chunks sans ecraser les autres, jamais une base par livre). Le `document_id`
-stable (calcule a l'extraction, stocke dans `meta.json`) identifie ce
-document dans la base. `status.json` mis a jour.
+Base vectorielle persistée dans `<racine_projet>/rag_data/db/vector/`
+(**base UNIQUE, commune à tout le corpus** — chaque document y ajoute ses
+chunks sans écraser les autres, jamais une base par livre). Le `document_id`
+stable (calculé à l'extraction, stocké dans `meta.json`) identifie ce
+document dans la base. `status.json` mis à jour.
 
 ## Critère de sortie exploitable
 
-Ni `/rag-concepts` ni `/rag-graphe` ne lisent la base vectorielle — verifie
-dans leur code, ils ne dependent que de `chunks.json`/`concepts.json`.
-L'indexation n'est donc le prerequis mecanique d'aucune etape suivante du
+Ni `/rag-concepts` ni `/rag-graphe` ne lisent la base vectorielle — vérifié
+dans leur code, ils ne dépendent que de `chunks.json`/`concepts.json`.
+L'indexation n'est donc le prérequis mécanique d'aucune étape suivante du
 pipeline : elle est exploitable uniquement pour une recherche/retrieval
-directe via `vector_store.search()`, au moment ou l'utilisateur interroge le
-RAG — pas comme condition de blocage avant d'enchainer sur `/rag-concepts`.
+directe via `vector_store.search()`, au moment où l'utilisateur interroge le
+RAG — pas comme condition de blocage avant d'enchaîner sur `/rag-concepts`.
 
-## Apres execution
+## Après exécution
 
-Affiche un resume structure : titre court ("Indexation terminee —
-`<nom du document>`"), puis synthese chiffree (nombre de chunks indexes,
-nombre de chunks ignores comme bruit, nom du modele d'embedding utilise —
-`BAAI/bge-m3`). Ce script ne
-produit aucun rapport de qualite type (contrairement a `/rag-extraction`) :
-le seul signal — le nombre de chunks ignores comme bruit — est un filtrage
-volontaire, pas un defaut ; ne fabrique pas de distinction
-bloquant/indicatif qui ne correspondrait a rien de reel ici.
+Affiche un résumé structuré : titre court ("Indexation terminée —
+`<nom du document>`"), puis synthèse chiffrée (nombre de chunks indexés,
+nombre de chunks ignorés comme bruit, nom du modèle d'embedding utilisé —
+`BAAI/bge-m3`). Le nombre de chunks ignorés comme bruit est un filtrage
+volontaire, pas un défaut.
 
-Le `document_id` affiche est reutilise tel quel par `/rag-graphe` — ne le
-recalcule jamais manuellement, il est derive automatiquement du meme
+**Contrôles** (`_rag_lib/checks.py`) :
+- **Entrée** (code `1` si échec) : `chunks.json` valide et non vide,
+  `/rag-chunking` terminé, `document_id` cohérent avec `meta.json`, au moins
+  un chunk indexable.
+- **Sortie** (code `2` et étape `failed` si échec) : le nombre de chunks
+  présents dans Chroma pour ce `document_id` doit être **exactement** égal au
+  nombre attendu (chunks moins bruit), et une requête de test (le premier
+  chunk indexable, réinterrogé par son propre embedding) doit le retrouver
+  en premier — le modèle est déjà en cache dans ce process, pas de
+  rechargement.
+- **Faux « déjà fait »** : sans `--force`, un `status.json` à `done` n'est
+  plus cru sur parole — le comptage Chroma est vérifié, et si la base ne
+  contient pas le document, le script le signale et réindexe.
+
+Le `document_id` affiché est réutilisé tel quel par `/rag-graphe` — ne le
+recalcule jamais manuellement, il est dérivé automatiquement du même
 fichier `pivot.md`.

@@ -19,6 +19,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "_rag_lib"))
 
 from chunk import chunk_markdown, DEFAULT_TARGET_TOKENS, DEFAULT_OVERLAP_BLOCKS
+import checks
 import paths
 import status as status_lib
 
@@ -48,19 +49,30 @@ def main() -> int:
         print(f"deja fait (chunking): {chunks_path}")
         return 0
 
+    pre = checks.check_input("chunking", work_dir)
+    print(pre.report())
+    if not pre.ok:
+        return 1
+
     markdown = pivot_path.read_text(encoding="utf-8")
     chunks = chunk_markdown(markdown, target_tokens=args.target_tokens, overlap_blocks=args.overlap_blocks)
 
     if not chunks:
-        status_lib.mark_stage(work_dir, "chunking", "failed", detail="aucun chunk produit")
+        status_lib.mark_stage(work_dir, "chunking", "failed", detail="aucun chunk produit", verdict="bloquant", verdict_reasons=["aucun chunk produit"])
         print("ERREUR: aucun chunk produit", file=sys.stderr)
-        return 1
+        return 2
 
     chunks_path.write_text(json.dumps([asdict(c) for c in chunks], ensure_ascii=False), encoding="utf-8")
-    status_lib.mark_stage(work_dir, "chunking", "done", n_chunks=len(chunks))
 
-    print(f"OK: {len(chunks)} chunks -> {chunks_path}")
-    return 0
+    post = checks.check_output("chunking", work_dir, n_chunks=len(chunks))
+    print(post.report())
+    status_lib.mark_stage(
+        work_dir, "chunking", "done" if post.ok else "failed", detail=post.detail(),
+        n_chunks=len(chunks), verdict=post.verdict, verdict_reasons=post.blocking,
+    )
+
+    print(f"{'OK' if post.ok else 'BLOQUANT'}: {len(chunks)} chunks -> {chunks_path}")
+    return 0 if post.ok else 2
 
 
 if __name__ == "__main__":
