@@ -1,11 +1,15 @@
 """Embedding et indexation vectorielle locale.
 
-Modèle d'embedding : `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2`
-via fastembed (ONNX, ~220 Mo, local, pas de clé API) — multilingue, ce qui
-compte puisque le corpus est en français mais les concepts techniques
-restent parfois mélangés à de l'anglais. Choisi comme compromis léger plutôt
-que des modèles plus lourds (multilingual-e5-large, bge-m3) : à réévaluer si
-la qualité de retrieval s'avère insuffisante en pratique.
+Modèle d'embedding : `BAAI/bge-m3` via `sentence-transformers` (local, pas de
+clé API) — multilingue, fenetre native de 8192 tokens. Remplace
+`paraphrase-multilingual-MiniLM-L12-v2` (128 tokens reels) utilise
+initialement via `fastembed` : mesure empirique sur le corpus reel (voir
+`tools/analyze_embedder_candidates.py`) montrant que ce dernier tronquait
+silencieusement ~98% des chunks assembles par `/rag-chunking`, contre 0%
+avec bge-m3 aux memes tailles de chunk. `fastembed` ne propose pas de
+version ONNX de bge-m3 (liste fermee de modeles) ; `sentence-transformers`
+tourne sur `torch`/`transformers`, deja presents dans ce venv pour
+`pix2tex` (OCR de formules) — pas de nouvelle dependance lourde.
 
 Stockage : Chroma en mode embarqué (`PersistentClient`), un simple dossier de
 fichiers locaux — pas de serveur à faire tourner.
@@ -17,19 +21,19 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import chromadb
-from fastembed import TextEmbedding
+from sentence_transformers import SentenceTransformer
 
 from chunk import Chunk
 
-DEFAULT_MODEL_NAME = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+DEFAULT_MODEL_NAME = "BAAI/bge-m3"
 DEFAULT_COLLECTION_NAME = "documents"
 
-_model_cache: dict[str, TextEmbedding] = {}
+_model_cache: dict[str, SentenceTransformer] = {}
 
 
-def _get_model(model_name: str = DEFAULT_MODEL_NAME) -> TextEmbedding:
+def _get_model(model_name: str = DEFAULT_MODEL_NAME) -> SentenceTransformer:
     if model_name not in _model_cache:
-        _model_cache[model_name] = TextEmbedding(model_name=model_name)
+        _model_cache[model_name] = SentenceTransformer(model_name)
     return _model_cache[model_name]
 
 
@@ -58,7 +62,7 @@ def embed_texts(texts: list[str], *, model_name: str = DEFAULT_MODEL_NAME) -> li
     if not texts:
         return []
     model = _get_model(model_name)
-    return [vec.tolist() for vec in model.embed(texts)]
+    return model.encode(texts, convert_to_numpy=True).tolist()
 
 
 def embed_chunks(chunks: list[Chunk], *, model_name: str = DEFAULT_MODEL_NAME) -> list[list[float]]:
@@ -131,6 +135,6 @@ def search(
     top_k: int = 5,
 ):
     model = _get_model(model_name)
-    query_embedding = next(iter(model.embed([query]))).tolist()
+    query_embedding = model.encode([query], convert_to_numpy=True)[0].tolist()
     collection = get_collection(db_path, collection_name)
     return collection.query(query_embeddings=[query_embedding], n_results=top_k)

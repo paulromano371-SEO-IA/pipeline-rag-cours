@@ -9,8 +9,9 @@ description: >-
 
 # /rag-index — Etape 5 du pipeline RAG
 
-Embedde chaque chunk (modele multilingue local via fastembed, aucune cle API)
-et l'indexe dans une base Chroma partagee entre tous les documents du corpus.
+Embedde chaque chunk (modele multilingue local via sentence-transformers,
+aucune cle API) et l'indexe dans une base Chroma partagee entre tous les
+documents du corpus.
 Les chunks de bruit non textuel (motifs de hachures mal extraits d'un
 diagramme) sont exclus — critere exact (`_rag_lib/quality.py`,
 `is_noise_text`) : un chunk d'au moins 60 caracteres dont moins de 30% des
@@ -89,7 +90,7 @@ RAG — pas comme condition de blocage avant d'enchainer sur `/rag-concepts`.
 Affiche un resume structure : titre court ("Indexation terminee —
 `<nom du document>`"), puis synthese chiffree (nombre de chunks indexes,
 nombre de chunks ignores comme bruit, nom du modele d'embedding utilise —
-`sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2`). Ce script ne
+`BAAI/bge-m3`). Ce script ne
 produit aucun rapport de qualite type (contrairement a `/rag-extraction`) :
 le seul signal — le nombre de chunks ignores comme bruit — est un filtrage
 volontaire, pas un defaut ; ne fabrique pas de distinction

@@ -10,6 +10,13 @@ MCP, ne consomme pas le contexte de cette conversation) extrait 3-8 concepts
 significatifs avec nom, forme canonique et type. Un chunk dont l'extraction
 echoue est ignore et journalise, sans interrompre le traitement des autres.
 
+`concepts.json` est reecrit apres CHAQUE chunk traite avec succes (pas
+seulement a la fin) : une interruption (Ctrl+C, crash, timeout) ne perd
+jamais plus d'un chunk de progression. Une reprise (relance sans `--force`,
+`status.json` pas encore "done") saute automatiquement les chunks deja
+presents dans le fichier ; un chunk qui avait echoue est naturellement
+retente (il n'est jamais enregistre).
+
 ## Execution
 
 Toujours en foreground, bloquant jusqu'a completion — jamais via
@@ -21,7 +28,10 @@ etape risque une contention entre appels imbriques.
 "<racine_projet>/.venv-rag/Scripts/python.exe" "<racine_projet>/.claude/skills/rag-concepts/scripts/run.py" "<pdf_condense_ou_document_id_ou_dossier_de_travail>"
 ```
 
-Options : `--force`.
+Options : `--force`, `--reset` (supprime `concepts.json` et l'entree
+`extraction_concepts` de `status.json` avant de regenerer entierement —
+utile apres un changement du prompt d'extraction, pour ne pas melanger
+anciennes et nouvelles formes canoniques).
 
 ## Prerequis
 

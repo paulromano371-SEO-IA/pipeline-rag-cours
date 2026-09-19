@@ -53,12 +53,12 @@ Pour chaque image, bloc de code et formule d'affichage (déjà en LaTeX) produit
 ### 4. `/rag-chunking` — Découpage en chunks — **en cours de développement**
 `/rag-chunking <pdf_condense_ou_document_id>`
 
-Découpe le markdown pivot enrichi en chunks d'environ 400 tokens (avec recouvrement), sans jamais couper un bloc de code, une image ou une formule au milieu. Pour un élément décrit par `/rag-nottext`, le texte réellement embeddé (calculé à l'étape suivante) ne retient que sa description en langage naturel — jamais le verbatim brut — pour ne pas diluer la similarité avec une question en français. Étape purement déterministe (basée sur `tiktoken`), aucun appel à un modèle de langage.
+Découpe le markdown pivot enrichi en chunks d'environ 400 tokens (avec recouvrement), sans jamais couper un bloc de code, une image ou une formule au milieu. Pour un élément décrit par `/rag-nottext`, le texte réellement embeddé (calculé à l'étape suivante) ne retient que sa description en langage naturel — jamais le verbatim brut — pour ne pas diluer la similarité avec une question en français. Étape purement déterministe (basée sur le tokenizer réel du modèle d'embedding, `BAAI/bge-m3`), aucun appel à un modèle de langage.
 
 ### 5. `/rag-index` — Indexation vectorielle — **en cours de développement**
 `/rag-index <pdf_condense_ou_document_id>`
 
-Calcule les embeddings de chaque chunk (modèle multilingue local via `fastembed`, sans clé API externe) et les indexe dans une base vectorielle Chroma partagée entre tous les documents du corpus. Les chunks de texte "bruité" (motifs mal extraits d'un diagramme) sont filtrés automatiquement.
+Calcule les embeddings de chaque chunk (modèle multilingue local `BAAI/bge-m3` via `sentence-transformers`, sans clé API externe) et les indexe dans une base vectorielle Chroma partagée entre tous les documents du corpus. Les chunks de texte "bruité" (motifs mal extraits d'un diagramme) sont filtrés automatiquement.
 
 ### 6. `/rag-concepts` — Extraction des concepts — **en cours de développement**
 `/rag-concepts <pdf_condense_ou_document_id>`

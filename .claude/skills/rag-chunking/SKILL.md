@@ -11,7 +11,11 @@ description: >-
 # /rag-chunking — Etape 4 du pipeline RAG
 
 Decoupe le markdown pivot en chunks (~400 tokens cible, recouvrement d'un
-bloc) prets a etre embeddes. Script deterministe (tiktoken), aucun appel LLM.
+bloc) prets a etre embeddes. Script deterministe, aucun appel LLM. Le
+comptage de tokens utilise le tokenizer reel du modele d'embedding
+(`BAAI/bge-m3`, voir `_rag_lib/chunk.py`) — jamais un proxy generique type
+tiktoken, dont le decompte n'a aucun rapport avec la vraie limite du modele
+qui embeddera ensuite ces chunks (`/rag-index`).
 
 Un bloc code/image/formule directement suivi de la description generee par
 `/rag-nottext` (marqueur `DESCRIPTION_MARKER`, voir `_rag_lib/chunk.py`) est

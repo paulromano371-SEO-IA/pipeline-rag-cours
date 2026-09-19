@@ -20,9 +20,22 @@ _SYSTEM_PROMPT = (
     "chaque concept notable (pas les mots génériques), donne : le nom tel "
     'qu\'il apparaît dans le texte ("name"), une forme canonique courte et '
     'normalisée ("canonical_form", en minuscules, sans article), et un type '
-    'parmi concept, method, tool, metric, person, other ("type"). Limite-toi '
-    "aux 3-8 concepts les plus significatifs du passage, ignore les mots "
-    "communs. Réponds UNIQUEMENT avec un tableau JSON d'objets "
+    'parmi concept, method, tool, metric, person, other ("type"). '
+    "La forme canonique doit toujours être ATOMIQUE, jamais composée : si le "
+    "texte mentionne deux méthodes ou concepts ensemble (ex. \"ridge et "
+    "lasso\", \"ridge/lasso\"), donne DEUX entrées séparées (\"ridge\", "
+    "\"lasso\"), jamais une forme combinée (\"ridge/lasso\"). Retire aussi "
+    "tout préfixe générique qui n'apporte rien à l'identification du concept "
+    '(ex. "régularisation ridge" -> "ridge", "méthode du bootstrap" -> '
+    '"bootstrap") : la forme canonique doit être celle, la plus courte et la '
+    "plus stable, qu'on retrouverait à l'identique dans n'importe quel autre "
+    "passage mentionnant ce même concept — nécessaire pour que deux mentions "
+    "du même concept dans des passages différents partagent exactement la "
+    "même forme canonique, condition pour que la résolution d'entités en "
+    "aval (comparaison d'embeddings sur cette seule forme courte) les "
+    "reconnaisse comme identiques. Limite-toi aux 3-8 concepts les plus "
+    "significatifs du passage, ignore les mots communs. Réponds UNIQUEMENT "
+    "avec un tableau JSON d'objets "
     '{"name": ..., "canonical_form": ..., "type": ...}, sans texte ni balise autour.'
 )
 

@@ -22,6 +22,20 @@ d'une formule LaTeX ou d'un extrait de code bruts, et mélanger verbatim et
 description dans le même texte embeddé dilue la similarité au lieu de la
 restaurer — d'autant plus que le verbatim est long (formule) par rapport à
 la description.
+
+Le comptage de tokens (`count_tokens`) utilise le tokenizer REEL du modele
+d'embedding (`BAAI/bge-m3`, voir `vector_store.DEFAULT_MODEL_NAME` — a garder
+synchronise avec `_TOKENIZER_MODEL_NAME` ci-dessous) plutot qu'un proxy
+generique (`tiktoken`, utilise avant, calibre pour les modeles OpenAI, sans
+rapport avec le tokenizer XLM-R de bge-m3) : mesure empirique sur le corpus
+reel (voir `tools/analyze_embedder_candidates.py`) montrant que le proxy
+precedent masquait une troncature silencieuse quasi systematique par
+l'ancien modele d'embedding (128 tokens reels). Le budget de remplissage des
+chunks (`target_tokens`) est lui aussi calcule sur `embed_text` (ce qui est
+reellement envoye au modele) et non sur le verbatim brut -- un chunk riche
+en blocs code/formule (description courte, verbatim long) peut donc
+legitimement accumuler plus de contenu citable qu'un chunk de prose pure,
+sans que ca ne reflete une sous-estimation de sa taille reellement embeddee.
 """
 
 from __future__ import annotations
@@ -29,9 +43,13 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-import tiktoken
+from transformers import AutoTokenizer
 
-_ENCODING = tiktoken.get_encoding("cl100k_base")
+# Doit rester synchronise avec `vector_store.DEFAULT_MODEL_NAME` -- pas
+# d'import direct de `vector_store` ici pour eviter un import circulaire
+# (`vector_store.py` importe deja `Chunk` depuis ce module).
+_TOKENIZER_MODEL_NAME = "BAAI/bge-m3"
+_TOKENIZER = AutoTokenizer.from_pretrained(_TOKENIZER_MODEL_NAME)
 _HEADING_RE = re.compile(r"^(#{1,6})\s+(.*)$")
 _FORMULA_ENV_NAMES = r"equation\*?|align\*?|gather\*?|multline\*?|eqnarray\*?|flalign\*?"
 
@@ -83,14 +101,14 @@ class Chunk:
     index: int
     text: str
     heading_trail: list[str]
-    token_count: int
+    token_count: int  # base sur embed_text, pas sur le verbatim -- voir chunk_markdown
     has_code: bool
     embed_text: str | None = None
     has_formula: bool = False
 
 
 def count_tokens(text: str) -> int:
-    return len(_ENCODING.encode(text))
+    return len(_TOKENIZER.encode(text, add_special_tokens=True))
 
 
 def split_into_blocks(markdown: str) -> list[_Block]:
@@ -280,7 +298,7 @@ def chunk_markdown(
             [b for b in current_blocks[-overlap_blocks:] if b.kind != "heading"] if overlap_blocks else []
         )
         current_blocks = list(carried)
-        current_tokens = sum(count_tokens(b.text) for b in current_blocks)
+        current_tokens = sum(count_tokens(b.embed_text or b.text) for b in current_blocks)
 
     for block in blocks:
         if block.kind == "heading":
@@ -289,7 +307,12 @@ def chunk_markdown(
                     del heading_trail[level]
             heading_trail[block.heading_level] = block.text
 
-        block_tokens = count_tokens(block.text)
+        # Budget calcule sur ce qui sera reellement embedde (embed_text pour
+        # un bloc fusionne code/formule/image, verbatim sinon) -- voir la
+        # docstring du module. Un bloc de code volumineux mais a description
+        # courte pese donc peu dans ce budget, meme si son verbatim (garde
+        # intact dans Chunk.text pour la citation) est long.
+        block_tokens = count_tokens(block.embed_text or block.text)
         if current_blocks and current_tokens + block_tokens > target_tokens:
             _flush()
 
