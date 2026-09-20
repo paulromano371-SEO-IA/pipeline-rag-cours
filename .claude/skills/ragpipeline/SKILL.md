@@ -1,6 +1,6 @@
 ---
 name: ragpipeline
-description: Enchaîne tout le pipeline RAG sur un livre/support, de bout en bout, en invoquant successivement /cours-condense, /rag-extraction, /rag-nottext, /rag-chunking, /rag-index, /rag-concepts et /rag-graphe. Usage: /ragpipeline <chemin_vers_livre.pdf> [--from ETAPE] [--force]. Déclenche aussi sur "fais entrer ce livre dans le RAG", "ingère ce document dans la base de connaissances".
+description: Enchaîne tout le pipeline RAG sur un livre/support, de bout en bout, en invoquant successivement /cours-condense, /rag-extraction, /rag-nottext, /rag-chunking, /rag-index, /rag-concepts et /rag-graphe. Usage: /ragpipeline <chemin_vers_livre.pdf> [--from ETAPE] [--force] [--reset] [--clear-graph]. Déclenche aussi sur "fais entrer ce livre dans le RAG", "ingère ce document dans la base de connaissances".
 ---
 
 # /ragpipeline — Orchestrateur du pipeline RAG complet
@@ -106,7 +106,7 @@ Tout code autre que `0` et `3` est un arrêt. Contrôles bloquants par étape
 |---|---|
 | `/rag-extraction` | au moins un `BLOQUANT` qualité ou fidélité ; `pivot.md`/`meta.json` invalides |
 | `/rag-nottext` | élément non-textuel en échec ou sans description ; image référencée absente |
-| `/rag-chunking` | `chunks.json` vide/invalide ; bloc de code coupé dans un chunk |
+| `/rag-chunking` | `chunks.json` vide/invalide ; bloc de code coupé dans un chunk ; chunk de section structurelle (table des matières...) |
 | `/rag-index` | nombre de chunks dans Chroma différent de l'attendu (comptage exact) ; chunk de test non retrouvé |
 | `/rag-concepts` | plus de 5 % des chunks indexables sans concepts, ou aucun concept |
 | `/rag-graphe` | plus de 5 % de mentions ignorées ; comptes incohérents ; document absent du graphe |
@@ -155,17 +155,19 @@ ligne.
    recherche vectorielle et au graphe de concepts, un modèle d'embedding
    texte ne rapprochant quasiment jamais une question en français d'un
    verbatim LaTeX/code/image brut (vérifié empiriquement).
-4. **`/rag-chunking <document_id_ou_pdf>`** — chunks.json.
+4. **`/rag-chunking <document_id_ou_pdf>`** — chunks.json. Les sections
+   structurelles (table des matières, index...) n'y donnent aucun chunk :
+   rien n'en est indexé, extrait en concepts ni relié au graphe.
 5. **`/rag-index <document_id_ou_pdf>`** — indexation vectorielle (base
    partagée `rag_data/db/vector/`).
 6. **`/rag-concepts <document_id_ou_pdf> --batch-size 40`** — extraction de
    concepts par chunk, par lots.
-7. **`/rag-graphe <document_id_ou_pdf> --batch-size 30`** — résolution
+7. **`/rag-graphe <document_id_ou_pdf> --batch-size 10`** — résolution
    d'entités + graphe (base partagée `rag_data/db/graph/`), par lots.
 
 **Par lots, toujours** pour les étapes 3, 6 et 7 : `/rag-nottext
 --batch-size 15`, `/rag-concepts --batch-size 40`, `/rag-graphe
---batch-size 30`. Ces trois étapes font des appels `claude -p` séquentiels et
+--batch-size 10`. Ces trois étapes font des appels `claude -p` séquentiels et
 dépasseraient, sur un livre de taille normale, les 10 minutes d'une commande
 foreground (l'application la passerait alors en arrière-plan, ce que ce
 pipeline interdit). Sur un petit document, un seul lot suffit et le code de
@@ -179,17 +181,87 @@ saute son propre travail si déjà `done` (sauf `--force`). Pour reprendre un
 pipeline interrompu, relance simplement `/ragpipeline` sur le même fichier
 source : les étapes déjà faites se sautent d'elles-mêmes.
 
-`--from ETAPE` (valeurs : `courscondense`, `extraction`, `nottext`, `chunking`,
-`index`, `concepts`, `graphe`) force le redémarrage à partir de cette étape
-avec `--force`, utile si un changement en amont (ex. nouveau modèle
-d'embedding) doit se repropager sans tout refaire depuis `courscondense`.
+Si le chemin donné est déjà un cours condensé (dans `corpuscondense/`),
+`/cours-condense` est sans objet : démarre à `/rag-extraction`.
+
+## Relance forcée : `--from`, `--force`, `--reset`
+
+`/ragpipeline <pdf> [--from ETAPE] [--force] [--reset] [--clear-graph]`
+
+Pour refaire un document déjà traité (ex. après un changement de découpage
+ou de modèle d'embedding). **Ces options n'ont d'effet que si l'utilisateur
+les a écrites dans SA commande en cours** : jamais ajoutées de ta propre
+initiative, jamais reprises d'un lancement précédent — elles écrasent des
+données de ce document.
+
+| Option | Effet |
+|---|---|
+| `--from ETAPE` | Point de départ de la relance forcée (`courscondense`, `extraction`, `nottext`, `chunking`, `index`, `concepts`, `graphe`). Les étapes avant ETAPE s'exécutent normalement (sautées si `done`). Implique `--force` à partir de ETAPE. |
+| `--force` | Relance avec `--force` chaque étape à partir du point de départ, même si elle est `done`. Sans `--from`, le point de départ est `extraction` — jamais `courscondense`, sauf `--from courscondense` explicite (étape la plus longue). |
+| `--reset` | Raccourci : sans `--from` ni `--force`, reconstruit uniquement `/rag-concepts` et `/rag-graphe` (point de départ `concepts`). Avec `--force` ou `--from`, n'ajoute rien : ces deux étapes reçoivent de toute façon `--reset` quand elles sont forcées (voir ci-dessous). |
+
+Ce que chaque étape reçoit lorsqu'elle est forcée, et ce qu'elle écrase — pour
+les étapes par lots, ces options ne vont que sur le **tout premier lot** ; les
+relances de la même étape (code `3`) se font sans elles :
+
+| Étape | Lancée avec | Écrase |
+|---|---|---|
+| `/rag-extraction` | `--force` | `pivot.md`, `images/`, `meta.json` |
+| `/rag-nottext` | `--force --batch-size 15` | `pivot.md` (rétabli puis ré-enrichi), `nottext_meta.json` — un appel `claude -p` par élément, la plus coûteuse |
+| `/rag-chunking` | `--force` | `chunks.json` |
+| `/rag-index` | `--force` | les chunks DE CE document dans Chroma (remplacés) |
+| `/rag-concepts` | `--reset --batch-size 40` | `concepts.json` et l'entrée `extraction_concepts` de `status.json`, supprimés dès le départ |
+| `/rag-graphe` | `--reset --batch-size 10` | la contribution DE CE document au graphe |
+
+**`/rag-concepts` et `/rag-graphe` forcés reçoivent toujours `--reset`, même
+si l'utilisateur n'a écrit que `--force` ou `--from`** :
+- `/rag-graphe` : `--force` seul ne retire rien du graphe, et les nœuds
+  `Chunk` `<document_id>::<n>` de l'ancien découpage y resteraient avec les
+  mêmes identifiants, reliés à d'anciens concepts (la numérotation des chunks
+  a changé) — un graphe faux. `--reset` ne retire que ce document ; les
+  autres livres et les concepts encore mentionnés ailleurs sont conservés
+  (les alias qu'il avait ajoutés à un concept partagé, eux, restent).
+- `/rag-concepts` : `--force` ne supprime pas `concepts.json` au départ. Si le
+  premier lot n'aboutit sur aucun chunk, l'ancien fichier — numéroté selon
+  l'ancien découpage — resterait en place et le contrôle de sortie pourrait
+  le valider à tort. `--reset` le supprime, ainsi que l'entrée de statut,
+  avant de commencer.
+
+**`--clear-graph`** (destructif pour TOUS les livres) : quand l'étape
+`/rag-graphe` est atteinte, lance d'abord `/rag-graphe <document_id_ou_pdf>
+--clear-graph` — il vide tout le graphe partagé, remet à zéro l'étape `graphe`
+de chaque livre et s'arrête avec le code `0` sans rien reconstruire (voir son
+SKILL.md) — puis, dans la foulée, `/rag-graphe <document_id_ou_pdf> --reset
+--batch-size 10` pour reconstruire ce livre-ci. Sans `--from` ni `--force`,
+`--clear-graph` seul relance uniquement l'étape `graphe` (point de départ
+`graphe`). Comme les autres options : jamais ajouté de ta propre initiative.
+Les autres livres ne sont **pas** reconstruits par cette commande : lance
+`/ragpipeline` sur chacun d'eux ensuite (`--from graphe` suffit si leurs
+concepts sont à jour). Pour repartir d'un graphe sans alias résiduel avec
+plusieurs livres, mets `--clear-graph` sur le **premier** livre uniquement.
+Annonce avant de vider quels livres seront à reconstruire ; la sortie du
+script en donne la liste exacte (`--dry-run` de `/rag-graphe` l'affiche sans
+rien modifier).
+
+**Avant la première étape forcée**, annonce en une phrase quelles étapes sont
+forcées et ce qui sera écrasé (voir le tableau). Ce n'est pas une demande de
+confirmation : l'utilisateur a déjà décidé en écrivant l'option.
+
+**Reprise d'une relance forcée interrompue** : les étapes en aval du point
+d'interruption portent encore leur ancien `done` (données de l'ancien
+découpage) et seraient sautées. Relance donc avec les mêmes options et
+`--from <étape interrompue>`. Exception : si seul un lot de `/rag-nottext`
+était en cours, `--from nottext` repartirait de zéro — termine plutôt
+`/rag-nottext` seul (sans `--force`), puis relance `--from chunking` avec les
+mêmes options.
 
 ## À la fin
 
 Ce résumé final n'est pas une question de validation : le pipeline est
 terminé. Résume à l'utilisateur, pour ce document : nombre de pages/chunks traités,
 nombre de concepts extraits, nombre de mentions liées au graphe, et surtout
-tout problème de qualité ou échec rencontré en cours de route. Si
+tout problème de qualité ou échec rencontré en cours de route. Après une
+relance forcée, rappelle quelles étapes ont été forcées. Si
 `/rag-graphe` a fusionné des concepts avec des documents déjà présents dans
 le corpus, signale-le — c'est le signal que la base de connaissances se
 densifie.

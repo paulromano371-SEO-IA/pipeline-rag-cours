@@ -12,6 +12,7 @@ locaux), cohérent avec Chroma pour le vecteur.
 
 from __future__ import annotations
 
+import json
 import math
 import uuid
 from dataclasses import dataclass
@@ -22,10 +23,28 @@ import numpy as np
 
 _SCHEMA_STATEMENTS = [
     "CREATE NODE TABLE Concept(id STRING, canonical_form STRING, type STRING, "
-    "aliases STRING[], embedding DOUBLE[], PRIMARY KEY(id))",
+    # `aliases` est une chaine JSON (liste de textes), PAS un STRING[] : sur Kuzu 0.11.3
+    # les colonnes STRING[] relues apres reouverture remplacaient les alias des concepts
+    # crees dans le lot precedent par ceux des tout premiers concepts (bug reproduit,
+    # deterministe ; les colonnes STRING et DOUBLE[] n'etaient pas touchees).
+    "aliases STRING, embedding DOUBLE[], PRIMARY KEY(id))",
     "CREATE NODE TABLE Chunk(id STRING, document_id STRING, chunk_index INT64, PRIMARY KEY(id))",
     "CREATE REL TABLE MENTIONS(FROM Chunk TO Concept)",
 ]
+
+
+def dump_aliases(aliases: list[str]) -> str:
+    """Liste d'alias -> chaine JSON stockee dans la colonne `aliases` (STRING)."""
+    return json.dumps(list(aliases), ensure_ascii=False)
+
+
+def load_aliases(raw) -> list[str]:
+    """Colonne `aliases` -> liste. Tolere une base a l'ancien schema (STRING[])."""
+    if raw is None or raw == "":
+        return []
+    if isinstance(raw, str):
+        return list(json.loads(raw))
+    return list(raw)
 
 
 def cosine_similarity(a: list[float], b: list[float]) -> float:
@@ -72,6 +91,12 @@ def cosine_similarities(query: list[float], candidates: list[list[float]]) -> li
     return [0.0 if c_norms[i] == 0 or not np.isfinite(sims[i]) else float(sims[i]) for i in range(len(candidates))]
 
 
+class GraphIntegrityError(RuntimeError):
+    """Ce que Kuzu contient ne correspond pas a ce que le programme vient d'y
+    ecrire (ou a l'etat qu'il tient en memoire). Arret immediat voulu : ne
+    jamais continuer sur une base dont on ne peut plus se fier aux alias."""
+
+
 @dataclass
 class ConceptRecord:
     id: str
@@ -86,6 +111,23 @@ class ConceptGraph:
         self._db = kuzu.Database(str(db_path))
         self._conn = kuzu.Connection(self._db)
         self._ensure_schema()
+
+    def close(self) -> None:
+        """Arret propre : force un CHECKPOINT (ecrit le journal dans les fichiers de
+        la base) puis ferme la connexion et la base. Sans cela, un processus qui
+        se termine laisse Kuzu fermer implicitement, et une reouverture a relu des
+        listes d'alias remplacees par celles des premiers concepts (voir
+        `check_integrity`). Idempotent ; une erreur est signalee, jamais avalee."""
+        if getattr(self, "_closed", False):
+            return
+        self._closed = True
+        try:
+            self._conn.execute("CHECKPOINT")
+            self._conn.close()
+            self._db.close()
+        except Exception as exc:  # signale : une fermeture ratee ne doit pas passer inapercue
+            import sys
+            print(f"ATTENTION : fermeture propre du graphe Kuzu echouee ({type(exc).__name__}: {exc})", file=sys.stderr)
 
     def _ensure_schema(self) -> None:
         for statement in _SCHEMA_STATEMENTS:
@@ -165,22 +207,80 @@ class ConceptGraph:
                 "id": concept_id,
                 "canonical_form": canonical_form,
                 "type": type_,
-                "aliases": [alias],
+                "aliases": dump_aliases([alias]),
                 "embedding": embedding,
             },
         )
+        self._verify_written(concept_id, canonical_form, [alias], "create_concept")
         return concept_id
 
     def add_alias(self, concept_id: str, alias: str) -> None:
-        result = self._conn.execute("MATCH (c:Concept {id: $id}) RETURN c.aliases", {"id": concept_id})
+        result = self._conn.execute(
+            "MATCH (c:Concept {id: $id}) RETURN c.canonical_form, c.aliases", {"id": concept_id}
+        )
         if not result.has_next():
             return
-        aliases = result.get_next()[0]
+        canonical_form, raw_aliases = result.get_next()
+        aliases = load_aliases(raw_aliases)
         if alias not in aliases:
             self._conn.execute(
                 "MATCH (c:Concept {id: $id}) SET c.aliases = $aliases",
-                {"id": concept_id, "aliases": aliases + [alias]},
+                {"id": concept_id, "aliases": dump_aliases(aliases + [alias])},
             )
+            self._verify_written(concept_id, canonical_form, aliases + [alias], f"add_alias({alias!r})")
+
+    def _verify_written(self, concept_id: str, canonical_form: str, expected_aliases: list[str], operation: str) -> None:
+        """Relit le concept qui vient d'etre ecrit et le compare a ce qu'on y a
+        mis. Un ecart signifie que Kuzu a stocke autre chose que la requete
+        envoyee -- on s'arrete au premier, avec de quoi le localiser."""
+        result = self._conn.execute(
+            "MATCH (c:Concept {id: $id}) RETURN c.canonical_form, c.aliases", {"id": concept_id}
+        )
+        if not result.has_next():
+            raise GraphIntegrityError(
+                f"{operation} : concept {canonical_form!r} (id {concept_id}) introuvable juste apres son ecriture"
+            )
+        found_canonical, raw_found = result.get_next()
+        found_aliases = load_aliases(raw_found)
+        if found_canonical != canonical_form or list(found_aliases) != list(expected_aliases):
+            raise GraphIntegrityError(
+                f"{operation} : Kuzu a stocke autre chose que ce qui a ete ecrit.\n"
+                f"    concept (id {concept_id}) : forme canonique attendue {canonical_form!r}, lue {found_canonical!r}\n"
+                f"    alias attendus {list(expected_aliases)!r}\n"
+                f"    alias lus      {list(found_aliases)!r}"
+            )
+
+    def check_integrity(self, expected: list["ConceptRecord"] | None = None, limit: int = 10) -> list[str]:
+        """Relit TOUTE la base et renvoie la liste des anomalies (vide = saine) :
+        - un concept dont la forme canonique n'est pas dans ses propres alias
+          (invariant garanti par create_concept/add_alias : impossible sans
+          corruption du stockage) ;
+        - si `expected` (l'etat tenu en memoire par l'appelant) est fourni,
+          tout concept absent, en trop, ou dont les alias different.
+        Au plus `limit` anomalies detaillees, plus un total."""
+        problems: list[str] = []
+        found = {c.id: c for c in self.all_concepts()}
+        for c in found.values():
+            if c.canonical_form not in c.aliases:
+                problems.append(
+                    f"concept {c.canonical_form!r} (id {c.id}) : sa forme canonique n'est pas dans ses alias {list(c.aliases)!r}"
+                )
+        if expected is not None:
+            for e in expected:
+                c = found.get(e.id)
+                if c is None:
+                    problems.append(f"concept {e.canonical_form!r} (id {e.id}) present en memoire mais absent de la base")
+                elif list(c.aliases) != list(e.aliases):
+                    problems.append(
+                        f"concept {e.canonical_form!r} (id {e.id}) : alias en memoire {list(e.aliases)!r}, dans la base {list(c.aliases)!r}"
+                    )
+            known_ids = {e.id for e in expected}
+            extra = [c for i, c in found.items() if i not in known_ids]
+            if extra:
+                problems.append(f"{len(extra)} concept(s) dans la base absent(s) de la memoire, ex. {extra[0].canonical_form!r}")
+        if len(problems) > limit:
+            problems = problems[:limit] + [f"... et {len(problems) - limit} autre(s) anomalie(s)"]
+        return problems
 
     def link_mention(self, chunk_id: str, concept_id: str) -> None:
         exists = self._conn.execute(
@@ -193,6 +293,25 @@ class ConceptGraph:
             "MATCH (ch:Chunk {id: $chunk_id}), (c:Concept {id: $concept_id}) CREATE (ch)-[:MENTIONS]->(c)",
             {"chunk_id": chunk_id, "concept_id": concept_id},
         )
+
+    def stats(self) -> dict:
+        """Contenu actuel du graphe partagé : {"concepts": n, "mentions": n,
+        "chunks_by_document": {document_id: n}} — sert à annoncer l'impact
+        d'un `clear()` avant de l'exécuter."""
+        def _scalar(query: str) -> int:
+            result = self._conn.execute(query)
+            return result.get_next()[0] if result.has_next() else 0
+
+        by_document: dict[str, int] = {}
+        result = self._conn.execute("MATCH (ch:Chunk) RETURN ch.document_id, count(*)")
+        while result.has_next():
+            doc, n = result.get_next()
+            by_document[doc] = n
+        return {
+            "concepts": _scalar("MATCH (c:Concept) RETURN count(*)"),
+            "mentions": _scalar("MATCH ()-[r:MENTIONS]->() RETURN count(r)"),
+            "chunks_by_document": by_document,
+        }
 
     def count_chunks(self, document_id: str) -> int:
         """Nombre de noeuds `Chunk` de ce document (contrôle de sortie de /rag-graphe)."""
@@ -216,7 +335,7 @@ class ConceptGraph:
         records = []
         while result.has_next():
             row = result.get_next()
-            records.append(ConceptRecord(id=row[0], canonical_form=row[1], type=row[2], aliases=row[3], embedding=row[4]))
+            records.append(ConceptRecord(id=row[0], canonical_form=row[1], type=row[2], aliases=load_aliases(row[3]), embedding=row[4]))
         return records
 
     def get_concept(self, concept_id: str) -> ConceptRecord | None:
@@ -227,7 +346,7 @@ class ConceptGraph:
         if not result.has_next():
             return None
         row = result.get_next()
-        return ConceptRecord(id=row[0], canonical_form=row[1], type=row[2], aliases=row[3], embedding=row[4])
+        return ConceptRecord(id=row[0], canonical_form=row[1], type=row[2], aliases=load_aliases(row[3]), embedding=row[4])
 
     def mentions_of(self, concept_id: str) -> list[tuple[str, str, int]]:
         result = self._conn.execute(
@@ -248,7 +367,7 @@ class ConceptGraph:
         records = []
         while result.has_next():
             row = result.get_next()
-            records.append(ConceptRecord(id=row[0], canonical_form=row[1], type=row[2], aliases=row[3], embedding=row[4]))
+            records.append(ConceptRecord(id=row[0], canonical_form=row[1], type=row[2], aliases=load_aliases(row[3]), embedding=row[4]))
         return records
 
     def shared_concepts(self, document_id_a: str, document_id_b: str) -> list[tuple[ConceptRecord, int, int]]:
@@ -263,7 +382,7 @@ class ConceptGraph:
         records = []
         while result.has_next():
             row = result.get_next()
-            record = ConceptRecord(id=row[0], canonical_form=row[1], type=row[2], aliases=row[3], embedding=row[4])
+            record = ConceptRecord(id=row[0], canonical_form=row[1], type=row[2], aliases=load_aliases(row[3]), embedding=row[4])
             mentions = self.mentions_of(record.id)
             count_a = sum(1 for _, doc, _ in mentions if doc == document_id_a)
             count_b = sum(1 for _, doc, _ in mentions if doc == document_id_b)

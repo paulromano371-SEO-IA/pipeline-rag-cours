@@ -13,13 +13,14 @@ entre tous les documents) et met a jour <document>/status.json.
 from __future__ import annotations
 
 import argparse
+import atexit
 import json
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "_rag_lib"))
 
-from graph_store import ConceptGraph
+from graph_store import ConceptGraph, GraphIntegrityError
 from entity_resolution import ArbitrationError, resolve_concept
 from concepts import ConceptMention
 from vector_store import embed_texts
@@ -82,8 +83,46 @@ def _totals(progress: dict) -> tuple[int, int]:
     )
 
 
+def _integrity_stop(work_dir: Path, where: str, lines: list[str]) -> int:
+    """Arret sur incoherence entre Kuzu et ce que le programme y a ecrit. Code 2
+    (BLOQUANT), etape marquee `failed` : le pipeline ne doit jamais enchainer
+    sur une base dont les alias ne sont plus fiables."""
+    print("=== INTEGRITE DU GRAPHE : ECART DETECTE — arret de /rag-graphe ===", file=sys.stderr)
+    print(f"Moment : {where}", file=sys.stderr)
+    for line in lines:
+        print(f"  - {line}", file=sys.stderr)
+    print(
+        "Le graphe contient deja l'ecart : relancer sans le retirer le laisserait en place. "
+        "Reconstruire ce livre avec `--reset --batch-size 10` (ou `--clear-graph` si un autre livre est touche).",
+        file=sys.stderr,
+    )
+    status_lib.mark_stage(
+        work_dir, "graphe", "failed", detail=f"integrite du graphe : ecart detecte ({where})",
+        verdict="bloquant", verdict_reasons=[f"integrite du graphe : {where}"],
+    )
+    return 2
+
+
 def _save_progress(work_dir: Path, progress: dict) -> None:
     _progress_path(work_dir).write_text(json.dumps(progress, ensure_ascii=False), encoding="utf-8")
+
+
+def _work_dirs_with_graph_state() -> list[Path]:
+    """Dossiers de travail (tous documents) dont l'etape 'graphe' est renseignee
+    dans status.json ou qui portent un fichier de reprise — ce que `--clear-graph`
+    doit remettre a zero, le graphe etant partage entre tous les documents."""
+    found = []
+    if not paths.WORK_DIR.exists():
+        return found
+    for d in sorted(p for p in paths.WORK_DIR.iterdir() if p.is_dir()):
+        try:
+            has_state = "graphe" in status_lib.load_status(d) or _progress_path(d).exists()
+        except (json.JSONDecodeError, OSError):
+            print(f"  attention : status.json illisible dans {d.name}, ignore", file=sys.stderr)
+            continue
+        if has_state:
+            found.append(d)
+    return found
 
 
 def main() -> int:
@@ -105,7 +144,26 @@ def main() -> int:
         help="nombre max de chunks a traiter dans cette invocation (defaut : tous) — "
         "relancer la meme commande (SANS --force/--reset) tant que le code de sortie est 3",
     )
+    parser.add_argument(
+        "--clear-graph",
+        action="store_true",
+        help=(
+            "DESTRUCTIF POUR TOUT LE CORPUS : vide le graphe partage (concepts, chunks et liens de "
+            "TOUS les documents, alias compris), remet a zero l'etape 'graphe' de chaque document, "
+            "puis S'ARRETE : rien n'est reconstruit. Chaque document doit ensuite etre reconstruit "
+            "(/rag-graphe <document> --reset). Seule facon de supprimer les alias residuels qu'un "
+            "--reset laisse sur les concepts partages. Le document donne en argument doit avoir un "
+            "concepts.json valide (controle d'entree : on ne vide pas ce que l'on ne peut pas refaire)."
+        ),
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true",
+        help="avec --clear-graph : affiche ce qui serait supprime, ne modifie rien",
+    )
     args = parser.parse_args()
+    if args.dry_run and not args.clear_graph:
+        print("ERREUR: --dry-run n'a de sens qu'avec --clear-graph", file=sys.stderr)
+        return 1
 
     try:
         work_dir = paths.resolve_work_dir(args.path)
@@ -121,6 +179,45 @@ def main() -> int:
 
     document_id = _document_id_of(work_dir)
     graph = ConceptGraph(paths.GRAPH_DB_PATH)
+    # Fermeture propre (CHECKPOINT + close) a la sortie du processus, quel que
+    # soit le `return` pris plus bas (lot partiel, fin, arret integrite, erreur).
+    atexit.register(graph.close)
+
+    # Controle d'entree AVANT toute suppression : un --reset suivi d'un
+    # controle en echec (concepts perimes, CLI claude absent...) retirerait la
+    # contribution de ce document au graphe partage sans rien reconstruire.
+    pre_checked = False
+    if args.reset or args.clear_graph:
+        pre = checks.check_input("graphe", work_dir)
+        print(pre.report())
+        if not pre.ok:
+            return 1
+        pre_checked = True
+
+    if args.clear_graph:
+        stats = graph.stats()
+        other_dirs = _work_dirs_with_graph_state()
+        print("=== --clear-graph : impact sur le graphe PARTAGE ===")
+        print(f"Supprime : {stats['concepts']} concept(s), {stats['mentions']} lien(s), "
+              f"{sum(stats['chunks_by_document'].values())} chunk(s) de {len(stats['chunks_by_document'])} document(s) :")
+        for doc, n in sorted(stats["chunks_by_document"].items()):
+            known = "" if (paths.WORK_DIR / doc).exists() else "  [AUCUN dossier de travail : non reconstructible]"
+            print(f"  - {doc} ({n} chunk(s)){known}")
+        print(f"Etape 'graphe' remise a zero dans status.json pour {len(other_dirs)} document(s) : "
+              + (", ".join(d.name for d in other_dirs) or "aucun"))
+        print("Aucun document n'est reconstruit par cette commande.")
+        if args.dry_run:
+            print("--dry-run : rien n'a ete modifie.")
+            return 0
+        graph.clear()
+        for d in other_dirs:
+            _progress_path(d).unlink(missing_ok=True)
+            state = status_lib.load_status(d)
+            state.pop("graphe", None)
+            status_lib.save_status(d, state)
+        print("graphe vide ; etape 'graphe' remise a zero pour les documents ci-dessus.")
+        print("A reconstruire ensuite, document par document : /rag-graphe <document> --reset --batch-size 10")
+        return 0
 
     if args.reset:
         graph.remove_document(document_id)
@@ -141,13 +238,21 @@ def main() -> int:
         print("status.json dit 'done' mais le graphe ne le confirme pas — reconstruction :")
         print(existing.report())
 
-    pre = checks.check_input("graphe", work_dir)
-    print(pre.report())
-    if not pre.ok:
-        return 1
+    if not pre_checked:
+        pre = checks.check_input("graphe", work_dir)
+        print(pre.report())
+        if not pre.ok:
+            return 1
 
     per_chunk = json.loads(concepts_path.read_text(encoding="utf-8"))
     known_concepts = graph.all_concepts()  # charge une fois, pas par mention
+
+    # Integrite AVANT tout travail : detecte une corruption apparue a la
+    # fermeture/reouverture de la base (entre deux lots) ou laissee par un run
+    # precedent, sans qu'elle soit imputee au lot qui commence.
+    problems = graph.check_integrity()
+    if problems:
+        return _integrity_stop(work_dir, "debut de lot (base relue a l'ouverture)", problems)
 
     # Reprise apres interruption : si --force n'est pas passe, on saute les
     # chunks deja entierement traites lors d'un run precedent interrompu
@@ -209,6 +314,12 @@ def main() -> int:
                 )
                 chunk_skipped += 1
                 continue
+            except GraphIntegrityError as exc:
+                return _integrity_stop(
+                    work_dir,
+                    f"pendant le lot, chunk {chunk_index} ({chunk_id}), mention {m['name']!r} -> {mention.canonical_form!r}",
+                    str(exc).splitlines(),
+                )
             graph.link_mention(chunk_id, outcome.concept_id)
             chunk_linked += 1
 
@@ -227,6 +338,13 @@ def main() -> int:
         progress["chunks_done"] = sorted(chunks_done)
         _save_progress(work_dir, progress)
         print(f">>> Progression : {len(chunks_done)}/{len(per_chunk)} chunk(s) traites")
+
+    # Integrite APRES le lot : toute la base relue et comparee a l'etat tenu en
+    # memoire (alias compris). Un ecart ici, sans ecart pendant le lot, veut dire
+    # que la corruption est apparue apres l'ecriture (pas au moment de celle-ci).
+    problems = graph.check_integrity(known_concepts)
+    if problems:
+        return _integrity_stop(work_dir, "fin de lot (base relue et comparee a la memoire)", problems)
 
     n_mentions, n_skipped = _totals(progress)
 
