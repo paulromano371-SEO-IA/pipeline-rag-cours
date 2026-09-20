@@ -45,6 +45,8 @@ from dataclasses import dataclass
 
 from transformers import AutoTokenizer
 
+from structural import is_structural_heading
+
 # Doit rester synchronise avec `vector_store.DEFAULT_MODEL_NAME` -- pas
 # d'import direct de `vector_store` ici pour eviter un import circulaire
 # (`vector_store.py` importe deja `Chunk` depuis ce module).
@@ -251,17 +253,52 @@ def _merge_description_blocks(blocks: list[_Block]) -> list[_Block]:
     return merged
 
 
+def drop_structural_sections(blocks: list[_Block]) -> tuple[list[_Block], list[tuple[str, int]]]:
+    """Retire les sections structurelles (table des matières, sommaire,
+    index... — voir `structural.py`) : le titre ET tout ce qui le suit jusqu'au
+    prochain titre de niveau égal ou supérieur. Renvoie (blocs conservés,
+    [(titre de section retirée, nombre de blocs retirés titre compris)]).
+
+    À faire AVANT le découpage en chunks, jamais après : le découpage glouton
+    fusionne volontiers la fin d'une table des matières avec le début de la
+    section suivante (vérifié : chunk d'ISLR mêlant la fin de la TOC, le
+    numéro de page, le titre du chapitre 1 et son texte, étiqueté du fil
+    d'ariane du chapitre) — un filtre sur le fil d'ariane d'un chunk déjà
+    formé ne le verrait pas."""
+    kept: list[_Block] = []
+    dropped: list[list] = []
+    skip_level: int | None = None
+    for block in blocks:
+        if block.kind == "heading":
+            if skip_level is not None and block.heading_level <= skip_level:
+                skip_level = None
+            if skip_level is None and is_structural_heading(block.text):
+                skip_level = block.heading_level
+                dropped.append([block.text, 1])
+                continue
+        if skip_level is not None:
+            dropped[-1][1] += 1
+            continue
+        kept.append(block)
+    return kept, [(title, n) for title, n in dropped]
+
+
 def chunk_markdown(
     markdown: str,
     *,
     target_tokens: int = DEFAULT_TARGET_TOKENS,
     overlap_blocks: int = DEFAULT_OVERLAP_BLOCKS,
+    exclude_structural: bool = True,
 ) -> list[Chunk]:
     """Découpe `markdown` (sortie de `convert.py`) en chunks embeddables.
     `target_tokens` est une cible, pas une limite stricte : un bloc atomique
     (code, image, phrase unique) qui la dépasse à lui seul reste entier
-    plutôt que d'être tronqué."""
-    raw_blocks = _merge_description_blocks(split_into_blocks(markdown))
+    plutôt que d'être tronqué. `exclude_structural` (défaut) n'émet aucun
+    chunk pour les sections structurelles (voir `drop_structural_sections`)."""
+    blocks_in = split_into_blocks(markdown)
+    if exclude_structural:
+        blocks_in, _ = drop_structural_sections(blocks_in)
+    raw_blocks = _merge_description_blocks(blocks_in)
     blocks: list[_Block] = []
     for b in raw_blocks:
         if b.kind == "prose":

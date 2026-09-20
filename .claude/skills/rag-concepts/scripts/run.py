@@ -59,6 +59,20 @@ def main() -> int:
         print(f"ERREUR: chunks introuvables: {chunks_path} (lancez d'abord /rag-chunking)", file=sys.stderr)
         return 1
 
+    already_done = (
+        status_lib.is_done(work_dir, "extraction_concepts") and not args.force and not args.reset
+        and concepts_path.exists()
+    )
+
+    # Controle d'entree AVANT toute suppression : un --reset suivi d'un
+    # controle en echec (chunks perimes, CLI claude absent...) detruirait
+    # concepts.json et son statut sans rien reconstruire.
+    if not already_done:
+        pre = checks.check_input("concepts", work_dir)
+        print(pre.report())
+        if not pre.ok:
+            return 1
+
     if args.reset:
         concepts_path.unlink(missing_ok=True)
         status = status_lib.load_status(work_dir)
@@ -66,14 +80,9 @@ def main() -> int:
         status_lib.save_status(work_dir, status)
         print(f"reset : {concepts_path} supprime (si present), extraction_concepts retire de status.json")
 
-    if status_lib.is_done(work_dir, "extraction_concepts") and not args.force and concepts_path.exists():
+    if already_done:
         print(f"deja fait (extraction_concepts): {concepts_path}")
         return 0
-
-    pre = checks.check_input("concepts", work_dir)
-    print(pre.report())
-    if not pre.ok:
-        return 1
 
     raw_chunks = json.loads(chunks_path.read_text(encoding="utf-8"))
     chunks = [Chunk(**d) for d in raw_chunks]

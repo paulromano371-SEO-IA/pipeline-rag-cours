@@ -30,6 +30,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import paths
 import status as status_lib
+from structural import is_structural_trail
 
 # Seuils décidés avec l'utilisateur : au-delà de 5 % d'échecs, l'étape est
 # bloquante (jamais un graphe/concept set "presque complet" présenté comme done).
@@ -156,6 +157,27 @@ def _validate_chunks_file(work_dir: Path, res: CheckResult) -> list[dict] | None
             return None
         seen.add(entry["index"])
     return data
+
+
+def _structural_chunks(chunks: list[dict]) -> list[int]:
+    """Index des chunks dont le fil d'ariane est une section structurelle
+    (table des matières, index...) — voir `structural.py`."""
+    return [c["index"] for c in chunks if is_structural_trail(c["heading_trail"])]
+
+
+def _reject_structural_chunks(work_dir: Path, chunks: list[dict], res: CheckResult) -> None:
+    """Contrôle d'ENTRÉE de /rag-index et /rag-concepts : un chunks.json
+    produit avant l'exclusion des sections structurelles (ou avec
+    --keep-structural non enregistré) ne doit pas atteindre l'aval. Une
+    exclusion volontairement désactivée est lue dans status.json."""
+    if _stage_entry(work_dir, "chunking").get("metadata", {}).get("keep_structural"):
+        return
+    found = _structural_chunks(chunks)
+    if found:
+        res.blocking.append(
+            f"chunks.json contient {len(found)} chunk(s) de section(s) structurelle(s) "
+            f"(table des matières...) : {found[:_MAX_LISTED]} — relancer /rag-chunking --force"
+        )
 
 
 def _validate_concepts_file(work_dir: Path, res: CheckResult) -> list[dict] | None:
@@ -305,6 +327,8 @@ def check_input(stage: str, work_dir: Path) -> CheckResult:
 
     elif stage == "index":
         chunks = _validate_chunks_file(work_dir, res)
+        if chunks is not None:
+            _reject_structural_chunks(work_dir, chunks, res)
         _require_done(work_dir, "chunking", res)
         meta, _ = _load_json(work_dir / "meta.json")
         if isinstance(meta, dict) and meta.get("document_id") and meta["document_id"] != work_dir.name:
@@ -314,7 +338,9 @@ def check_input(stage: str, work_dir: Path) -> CheckResult:
             res.blocking.append("aucun chunk indexable (tous classés comme bruit)")
 
     elif stage == "concepts":
-        _validate_chunks_file(work_dir, res)
+        chunks = _validate_chunks_file(work_dir, res)
+        if chunks is not None:
+            _reject_structural_chunks(work_dir, chunks, res)
         _require_done(work_dir, "chunking", res)
         _require_claude_cli(res)
 
@@ -403,6 +429,25 @@ def check_output(stage: str, work_dir: Path, **kw) -> CheckResult:
             ]
             if broken:
                 res.blocking.append(f"bloc(s) de code coupé(s)/non refermé(s) dans les chunks {broken[:_MAX_LISTED]}")
+            keep_structural = kw.get("keep_structural")
+            if keep_structural is None:  # appel hors run.py (CLI) : lit le choix enregistré
+                keep_structural = _stage_entry(work_dir, "chunking").get("metadata", {}).get("keep_structural", False)
+            if not keep_structural:
+                structural = _structural_chunks(chunks)
+                if structural:
+                    res.blocking.append(
+                        f"{len(structural)} chunk(s) issu(s) d'une section structurelle "
+                        f"(table des matières, index...) : {structural[:_MAX_LISTED]}"
+                    )
+                # Indicatif : une table des matières qui ne serait PAS sous un
+                # titre reconnu (points de conduite ". . ." en nombre) échappe
+                # à l'exclusion par titre.
+                leaders = [c["index"] for c in chunks if c["text"].count(". . . .") >= 3 and c["index"] not in structural]
+                if leaders:
+                    res.notes.append(
+                        f"{len(leaders)} chunk(s) avec des points de conduite (table des matières probable hors "
+                        f"section reconnue) : {leaders[:_MAX_LISTED]}"
+                    )
             mean = sum(c["token_count"] for c in chunks) / len(chunks)
             res.metrics["mean_tokens"] = round(mean)
             if mean < 50:

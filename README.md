@@ -53,7 +53,7 @@ Pour chaque image, bloc de code et formule d'affichage (déjà en LaTeX) produit
 ### 4. `/rag-chunking` — Découpage en chunks — **en cours de développement**
 `/rag-chunking <pdf_condense_ou_document_id>`
 
-Découpe le markdown pivot enrichi en chunks d'environ 400 tokens (avec recouvrement), sans jamais couper un bloc de code, une image ou une formule au milieu. Pour un élément décrit par `/rag-nottext`, le texte réellement embeddé (calculé à l'étape suivante) ne retient que sa description en langage naturel — jamais le verbatim brut — pour ne pas diluer la similarité avec une question en français. Étape purement déterministe (basée sur le tokenizer réel du modèle d'embedding, `BAAI/bge-m3`), aucun appel à un modèle de langage.
+Découpe le markdown pivot enrichi en chunks d'environ 400 tokens (avec recouvrement), sans jamais couper un bloc de code, une image ou une formule au milieu. Pour un élément décrit par `/rag-nottext`, le texte réellement embeddé (calculé à l'étape suivante) ne retient que sa description en langage naturel — jamais le verbatim brut — pour ne pas diluer la similarité avec une question en français. Les sections structurelles (table des matières, sommaire, index, bibliographie...) sont exclues du découpage : elles restent dans `pivot.md` mais n'engendrent aucun chunk, donc rien n'est indexé, envoyé à l'extraction de concepts ni relié au graphe. Étape purement déterministe (basée sur le tokenizer réel du modèle d'embedding, `BAAI/bge-m3`), aucun appel à un modèle de langage.
 
 ### 5. `/rag-index` — Indexation vectorielle — **en cours de développement**
 `/rag-index <pdf_condense_ou_document_id>`

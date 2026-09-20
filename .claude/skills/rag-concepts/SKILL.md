@@ -34,6 +34,11 @@ utile après un changement du prompt d'extraction, pour ne pas mélanger
 anciennes et nouvelles formes canoniques), `--batch-size N` (voir
 ci-dessous).
 
+`--reset` ne supprime rien tant que le contrôle d'entrée n'a pas réussi
+(chunks valides et à jour, CLI `claude` disponible) : en cas d'échec de ce
+contrôle, `concepts.json` et son statut restent intacts et le script sort avec
+le code 1.
+
 ## Traitement par lots (documents volumineux)
 
 Un appel `claude -p` par chunk : sur un livre de plusieurs centaines de

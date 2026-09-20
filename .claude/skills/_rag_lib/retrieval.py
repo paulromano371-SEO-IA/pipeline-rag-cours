@@ -34,16 +34,18 @@ sommaire...) peut obtenir un bon score de similarite par pur recouvrement de
 mots (verifie empiriquement sur "Table des matieres", qui contient
 litteralement les mots de la requete) sans porter de contenu reel -- ecarte
 systematiquement via son fil d'ariane, independamment de tout score.
+`/rag-chunking` n'en produit plus aucun chunk (voir `structural.py`) : ce
+filtre ne sert plus qu'aux donnees indexees avant cette exclusion.
 """
 
 from __future__ import annotations
 
 import json
-import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
 
 from graph_store import ConceptGraph, cosine_similarities
+from structural import is_structural_trail
 from vector_store import DEFAULT_COLLECTION_NAME, DEFAULT_MODEL_NAME, embed_texts, get_collection
 
 import paths
@@ -60,23 +62,12 @@ DEFAULT_RESULT_CAP = 30
 # point d'arret naturel, pas un choix arbitraire.
 DEFAULT_RELEVANCE_MARGIN = 0.20
 
-# Titres de sections structurelles, sans contenu reel, a ne jamais retenir
-# comme resultat -- comparaison apres normalisation (accents/casse ignores).
-_STRUCTURAL_HEADINGS = {
-    "table des matieres", "sommaire", "index", "bibliographie",
-    "annexe", "annexes", "glossaire", "table of contents", "contents",
-    "references", "remerciements",
-}
-
-
-def _normalize(text: str) -> str:
-    stripped = unicodedata.normalize("NFKD", text)
-    stripped = "".join(c for c in stripped if not unicodedata.combining(c))
-    return stripped.lower().strip()
-
-
-def _is_structural(heading_trail: list[str]) -> bool:
-    return any(_normalize(h) in _STRUCTURAL_HEADINGS for h in heading_trail)
+# Sections structurelles (table des matieres...) : liste PARTAGEE avec
+# /rag-chunking (`_rag_lib/structural.py`), qui n'en produit desormais plus
+# aucun chunk. Ce filtre reste le second filet, pour des donnees indexees
+# avant cette exclusion (chunks.json/Chroma/graphe d'un document pas encore
+# reconstruit).
+_is_structural = is_structural_trail
 
 
 @dataclass

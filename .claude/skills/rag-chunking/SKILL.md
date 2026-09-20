@@ -58,6 +58,33 @@ Options :
 - `--force`
 - `--target-tokens N` (défaut 400)
 - `--overlap-blocks N` (défaut 1)
+- `--keep-structural` : conserve les sections structurelles au lieu de les
+  exclure (voir ci-dessous) — à réserver à un livre dont une section de ce
+  nom porte du vrai contenu ; le choix est enregistré dans `status.json` et
+  respecté par les contrôles d'entrée de `/rag-index` et `/rag-concepts`.
+
+## Sections structurelles exclues
+
+Table des matières, sommaire, index, bibliographie, annexe(s), glossaire,
+références, remerciements (liste unique `_rag_lib/structural.py`, partagée
+avec `retrieval.py`) : reconnues sur le **titre** de la section (accents et
+casse ignorés) — le titre du gabarit figé de `/cours-condense`, « Table des
+matières », en fait partie. `chunk.py:drop_structural_sections` retire le
+titre et tout ce qui suit jusqu'au prochain titre de niveau égal ou
+supérieur, **avant** le découpage : aucun chunk n'est produit, donc rien
+n'est embeddé, indexé, envoyé à l'extraction de concepts ni relié au graphe.
+`pivot.md` n'est pas modifié (fidélité au PDF condensé).
+
+Pourquoi avant le découpage et non sur le fil d'ariane des chunks : le
+découpage glouton fusionne la fin de la table des matières avec le début de
+la section suivante (constaté : un chunk mêlant la fin de la TOC, un numéro
+de page, le titre du chapitre 1 et son texte), que ce filtre n'aurait pas vu.
+
+Mesuré sur les deux premiers livres : ISLR 227 → 211 chunks, Bratanic
+136 → 117 ; aucun bloc code/image/formule perdu. Le script annonce les
+sections exclues (`Sections structurelles exclues ...`) et les enregistre
+dans `status.json` (`structural_sections_excluded`,
+`structural_blocks_excluded`).
 
 ## Prérequis
 
@@ -122,7 +149,10 @@ sans échec, et **aucun bloc code/image/formule sans description**
 - **bloquant** (code de sortie `2`, étape marquée `failed`, verdict écrit
   dans `status.json`) : `chunk_markdown` produit une liste vide, `chunks.json`
   invalide (forme, index dupliqués), `n_chunks` différent du contenu du
-  fichier, ou bloc de code coupé/non refermé dans un chunk. Dans ce cas,
+  fichier, bloc de code coupé/non refermé dans un chunk, ou chunk portant
+  le fil d'ariane d'une section structurelle (sauf `--keep-structural`).
+  Indicatif : chunk à points de conduite « . . . . » hors section
+  reconnue (table des matières probable sous un titre non reconnu). Dans ce cas,
   **arrête-toi et ne propose jamais d'enchaîner sur `/rag-index`**.
 - **indicatif** : fil d'ariane vide pour la plupart des chunks — signale-le,
   mais sans bloquer la suite (l'extraction n'a probablement pas détecté les

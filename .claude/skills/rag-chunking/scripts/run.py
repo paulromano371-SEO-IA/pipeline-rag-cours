@@ -18,7 +18,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "_rag_lib"))
 
-from chunk import chunk_markdown, DEFAULT_TARGET_TOKENS, DEFAULT_OVERLAP_BLOCKS
+from chunk import (
+    chunk_markdown, drop_structural_sections, split_into_blocks,
+    DEFAULT_TARGET_TOKENS, DEFAULT_OVERLAP_BLOCKS,
+)
 import checks
 import paths
 import status as status_lib
@@ -30,6 +33,11 @@ def main() -> int:
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--target-tokens", type=int, default=DEFAULT_TARGET_TOKENS)
     parser.add_argument("--overlap-blocks", type=int, default=DEFAULT_OVERLAP_BLOCKS)
+    parser.add_argument(
+        "--keep-structural", action="store_true",
+        help="conserve les sections structurelles (table des matieres, index...) au lieu de les exclure — "
+        "a reserver a un livre dont une section de ce nom porte du vrai contenu",
+    )
     args = parser.parse_args()
 
     try:
@@ -55,7 +63,18 @@ def main() -> int:
         return 1
 
     markdown = pivot_path.read_text(encoding="utf-8")
-    chunks = chunk_markdown(markdown, target_tokens=args.target_tokens, overlap_blocks=args.overlap_blocks)
+    excluded: list[tuple[str, int]] = []
+    if not args.keep_structural:
+        _, excluded = drop_structural_sections(split_into_blocks(markdown))
+    if excluded:
+        print(
+            "Sections structurelles exclues (aucun chunk, donc rien d'indexe ni de relie au graphe) : "
+            + ", ".join(f"« {title} » ({n} bloc(s))" for title, n in excluded)
+        )
+    chunks = chunk_markdown(
+        markdown, target_tokens=args.target_tokens, overlap_blocks=args.overlap_blocks,
+        exclude_structural=not args.keep_structural,
+    )
 
     if not chunks:
         status_lib.mark_stage(work_dir, "chunking", "failed", detail="aucun chunk produit", verdict="bloquant", verdict_reasons=["aucun chunk produit"])
@@ -64,11 +83,14 @@ def main() -> int:
 
     chunks_path.write_text(json.dumps([asdict(c) for c in chunks], ensure_ascii=False), encoding="utf-8")
 
-    post = checks.check_output("chunking", work_dir, n_chunks=len(chunks))
+    post = checks.check_output("chunking", work_dir, n_chunks=len(chunks), keep_structural=args.keep_structural)
     print(post.report())
     status_lib.mark_stage(
         work_dir, "chunking", "done" if post.ok else "failed", detail=post.detail(),
         n_chunks=len(chunks), verdict=post.verdict, verdict_reasons=post.blocking,
+        keep_structural=args.keep_structural,
+        structural_sections_excluded=[title for title, _ in excluded],
+        structural_blocks_excluded=sum(n for _, n in excluded),
     )
 
     print(f"{'OK' if post.ok else 'BLOQUANT'}: {len(chunks)} chunks -> {chunks_path}")
