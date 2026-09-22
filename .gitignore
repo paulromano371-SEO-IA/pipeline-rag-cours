@@ -16,6 +16,10 @@ __pycache__/
 # Fichiers d'état / verrous locaux
 .claude/scheduled_tasks.lock
 
+# Rapports générés par tools/graph_quality_report.py
+rapport_graphe.md
+rapport_qualite_graphe.md
+
 # Divers OS/éditeur
 .DS_Store
 Thumbs.db
