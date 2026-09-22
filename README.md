@@ -35,37 +35,37 @@ Chaque étape est une commande indépendante (un skill Claude Code), invocable s
 
 ## Les étapes en détail
 
-### 1. `/cours-condense` — Génération du cours condensé — **opérationnel**
+### 1. `/cours-condense` — Génération du cours condensé
 `/cours-condense <chemin_vers_livre.pdf> [checkpoint=false]`
 
 Lit le livre source **intégralement** (jamais un extrait) et produit un support de cours condensé en français, compilé en PDF via LaTeX. Le texte est réécrit dans un ton pédagogique fidèle à l'auteur, le code source est repris à l'identique (jamais reformulé), et des illustrations vectorielles originales sont créées pour appuyer les explications. Aucune longueur cible n'est fixée à l'avance : le plan et la compression découlent uniquement du contenu réellement essentiel du livre.
 
-### 2. `/rag-extraction` — Conversion en markdown pivot — **en cours de développement**
+### 2. `/rag-extraction` — Conversion en markdown pivot
 `/rag-extraction <chemin_vers_pdf_condense>`
 
 Convertit le PDF condensé (sortie de l'étape 1) en un markdown "pivot" qui distingue proprement titres, code et prose, et extrait les images natives du PDF. Une réparation automatique des ligatures typographiques cassées (ex. "ﬁ", "ﬂ") est appliquée si nécessaire. Traite aussi la détection de formules mathématiques mal ordonnées par l'extraction PDF brute.
 
-### 3. `/rag-nottext` — Description des éléments non-textuels — **en cours de développement**
+### 3. `/rag-nottext` — Description des éléments non-textuels
 `/rag-nottext <pdf_condense_ou_document_id>`
 
 Pour chaque image, bloc de code et formule d'affichage (déjà en LaTeX) produits à l'étape 2 : description en langage naturel, OCR/renommage adapté pour les images (classification formule mathématique vs image générale, LaTeX via pix2tex ou texte via tesseract, nom de fichier explicite), puis injection de cette description dans le markdown pivot, juste après l'élément. Un modèle d'embedding texte ne rapproche quasiment jamais une question en français d'un verbatim LaTeX, code ou image brut — vérifié empiriquement — donc sans cette étape, ce contenu reste invisible à la recherche vectorielle.
 
-### 4. `/rag-chunking` — Découpage en chunks — **en cours de développement**
+### 4. `/rag-chunking` — Découpage en chunks
 `/rag-chunking <pdf_condense_ou_document_id>`
 
 Découpe le markdown pivot enrichi en chunks d'environ 400 tokens (avec recouvrement), sans jamais couper un bloc de code, une image ou une formule au milieu. Pour un élément décrit par `/rag-nottext`, le texte réellement embeddé (calculé à l'étape suivante) ne retient que sa description en langage naturel — jamais le verbatim brut — pour ne pas diluer la similarité avec une question en français. Les sections structurelles (table des matières, sommaire, index, bibliographie...) sont exclues du découpage : elles restent dans `pivot.md` mais n'engendrent aucun chunk, donc rien n'est indexé, envoyé à l'extraction de concepts ni relié au graphe. Étape purement déterministe (basée sur le tokenizer réel du modèle d'embedding, `BAAI/bge-m3`), aucun appel à un modèle de langage.
 
-### 5. `/rag-index` — Indexation vectorielle — **en cours de développement**
+### 5. `/rag-index` — Indexation vectorielle
 `/rag-index <pdf_condense_ou_document_id>`
 
 Calcule les embeddings de chaque chunk (modèle multilingue local `BAAI/bge-m3` via `sentence-transformers`, sans clé API externe) et les indexe dans une base vectorielle Chroma partagée entre tous les documents du corpus. Les chunks de texte "bruité" (motifs mal extraits d'un diagramme) sont filtrés automatiquement.
 
-### 6. `/rag-concepts` — Extraction des concepts — **en cours de développement**
+### 6. `/rag-concepts` — Extraction des concepts
 `/rag-concepts <pdf_condense_ou_document_id>`
 
 Pour chaque chunk indexable, un appel `claude -p` headless extrait 3 à 8 concepts significatifs (nom, forme canonique, type). Cette étape prépare la construction du graphe de connaissances de l'étape suivante.
 
-### 7. `/rag-graphe` — Construction du graphe de connaissances (GraphRAG) — **en cours de développement**
+### 7. `/rag-graphe` — Construction du graphe de connaissances (GraphRAG)
 `/rag-graphe <pdf_condense_ou_document_id>`
 
 Résout chaque concept extrait en comparant sa similarité d'embedding aux concepts déjà connus du graphe (commun à tout le corpus) :
@@ -98,6 +98,7 @@ corpuscondense/     cours condensés en français, PDF finaux — jamais version
 rag_data/           toutes les données générées par le pipeline (chunks, embeddings,
                     base vectorielle Chroma, graphe Kuzu) — jamais versionné
 .claude/skills/     le code du pipeline (ce qui est versionné dans ce dépôt)
+.claude/hooks/      garde-fous exécutés automatiquement par Claude Code (voir plus bas)
 ```
 
 `corpusdedepart/`, `corpuscondense/` et `rag_data/` sont exclus du dépôt via `.gitignore` : ce sont des données volumineuses, potentiellement soumises au droit d'auteur (livres sources) ou régénérables à partir du code (base vectorielle, graphe).
@@ -115,5 +116,6 @@ Dépendances système supplémentaires (non couvertes par pip) :
 
 ## Points d'attention techniques
 
-- Les étapes du pipeline RAG (2 à 7) doivent toujours s'exécuter **au premier plan, jamais en arrière-plan ni en parallèle** : plusieurs d'entre elles appellent `claude -p` en interne, et des invocations concurrentes provoquent des timeouts ou des corruptions de la base partagée (Chroma, Kuzu).
+- Les étapes du pipeline RAG (1 à 7) doivent toujours s'exécuter **au premier plan, jamais en arrière-plan ni en parallèle** : plusieurs d'entre elles appellent `claude -p` en interne, et des invocations concurrentes provoquent des timeouts ou des corruptions de la base partagée (Chroma, Kuzu). Cette règle n'est pas qu'une convention documentée : elle est imposée techniquement par le hook `.claude/hooks/block_rag_background.py`, qui refuse toute commande `run_in_background` référençant un script du pipeline.
+- La lecture ou la vérification de `pivot.md` (sortie de `/rag-extraction`) et de son rapport qualité/fidélité ne doit jamais être déléguée à un sous-agent — même contrainte de déterminisme que ci-dessus. Imposé par le hook `.claude/hooks/block_rag_extraction_subagent_read.py`.
 - `rag_data/` centralise l'état de tout le corpus (base vectorielle et graphe uniques, communs à tous les documents) — ne jamais le supprimer, même partiellement.
