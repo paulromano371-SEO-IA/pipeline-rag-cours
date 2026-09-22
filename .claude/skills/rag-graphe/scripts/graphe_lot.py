@@ -1,7 +1,7 @@
 """Lance UN lot de /rag-graphe et termine TOUJOURS par une ligne de bilan.
 
 Usage :
-    python tools/graphe_lot.py <document_id | pdf | dossier> [--batch-size 10] [--reset]
+    python .claude/skills/rag-graphe/scripts/graphe_lot.py <document_id | pdf | dossier> [--batch-size 10] [--reset]
 
 `--reset` (a n'utiliser que sur le tout premier lot) est transmis tel quel a
 /rag-graphe. Sans lui, la commande reprend le lot suivant.
@@ -33,8 +33,8 @@ import sys
 import time
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-RUN = ROOT / ".claude" / "skills" / "rag-graphe" / "scripts" / "run.py"
+ROOT = Path(__file__).resolve().parents[4]
+RUN = Path(__file__).resolve().parent / "run.py"
 PYTHON = ROOT / ".venv-rag" / "Scripts" / "python.exe"
 
 

@@ -88,7 +88,8 @@ Scripts hors-pipeline, en lecture seule (aucun ne modifie `rag_data/`), pour exp
 - **`analyze_retrieval_coverage.py`** — pour une requête donnée, compare la recherche vectorielle brute (top-k plat) à `retrieval.retrieve()` (section + expansion par concept via le graphe), et mesure si tout le contenu associé (formules, images, code) d'une section est effectivement remonté.
 - **`rag_query.py`** — interroge le RAG avec `retrieval.retrieve()` et affiche le résultat de façon lisible (regroupé par document puis section), pour une exploration manuelle rapide.
 - **`graph_quality_report.py`** — rapport de qualité du graphe de concepts Kuzu : métriques structurelles (volumes, alias, concepts orphelins/hubs) et échantillons à auditer pour estimer la précision de la résolution d'entités entre livres.
-- **`graphe_lot.py`** — lance un unique lot de `/rag-graphe` et termine toujours par une ligne de bilan (`[LOT n/N]`, `[FIN]`, `[BLOQUANT]` ou `[ERREUR]`) ; utile pour piloter l'étape par lots successifs sans dépasser le délai avant bascule en arrière-plan.
+
+(`graphe_lot.py`, qui pilote l'exécution par lots de `/rag-graphe`, n'est pas un outil d'exploration autonome — il fait partie du skill lui-même, voir `.claude/skills/rag-graphe/scripts/`.)
 
 ## Organisation des données
 

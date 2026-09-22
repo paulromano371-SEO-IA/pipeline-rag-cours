@@ -102,12 +102,12 @@ premier appel :
 
 ## Un message de retour par lot (obligatoire)
 
-**Lance chaque lot avec `tools/graphe_lot.py`** (un lot par appel, jamais
+**Lance chaque lot avec `scripts/graphe_lot.py`** (un lot par appel, jamais
 plusieurs lots enchaînés dans une même commande : au-delà de 10 minutes
 l'application la passerait en arrière-plan) :
 
 ```bash
-"<racine_projet>/.venv-rag/Scripts/python.exe" "<racine_projet>/tools/graphe_lot.py" "<document_id_ou_pdf>" --batch-size 10 [--reset]
+"<racine_projet>/.venv-rag/Scripts/python.exe" "<racine_projet>/.claude/skills/rag-graphe/scripts/graphe_lot.py" "<document_id_ou_pdf>" --batch-size 10 [--reset]
 ```
 
 `--reset` uniquement sur le tout premier lot. Le script termine sa sortie par
