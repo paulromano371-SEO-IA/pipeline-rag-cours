@@ -431,7 +431,7 @@ Ce script insère, une seule fois et juste avant `\begin{document}`, l'intégral
 
 5. **Publie le PDF final dans `corpuscondense/`** — cette commande doit pouvoir s'exécuter seule, indépendamment de tout orchestrateur, donc cette publication fait partie du skill lui-même, pas d'une étape externe :
 	```bash
-	   "<racine_projet>/.venv-rag/Scripts/python.exe" "<racine_projet>/.claude/skills/_rag_lib/publish_condense.py" "<racine_projet>/<nom_du_livre>/"
+	   "<racine_projet>/.venv-rag/Scripts/python.exe" "<racine_projet>/.claude/skills/cours-condense/scripts/publish_condense.py" "<racine_projet>/<nom_du_livre>/"
 	```
    `<nom_du_livre>` inclut déjà `rag_data/courscondense/` (voir "Arborescence de travail" en tête de ce fichier) — ne préfixe pas une deuxième fois avec `rag_data/courscondense/`, sous peine de chemin invalide (`.../rag_data/courscondense/rag_data/courscondense/...`). Le script cherche récursivement `out/*.pdf` (peu importe la profondeur exacte) et copie le plus récent vers `<racine_projet>/corpuscondense/<slug>.pdf`, où `<slug>` est le dernier segment de `<nom_du_livre>` (le nom du dossier de travail lui-même, pas le chemin complet). 
    Rapporte le chemin de destination confirmé par le script. Si le script échoue (PDF introuvable), arrête-toi et signale-le — ne recopie jamais le fichier à la main en contournant le script.
