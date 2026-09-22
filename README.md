@@ -115,7 +115,7 @@ winget install --id Microsoft.VisualStudio.2022.BuildTools --override "--quiet -
 ```
 (ou `winget install --id Microsoft.VisualStudio.2022.BuildTools` sans `--override` pour l'installeur graphique, puis cocher le workload **"Desktop development with C++"** manuellement)
 
-### Étape 2 — Tesseract OCR (peut être fait avant ou après l'étape 3)
+### Étape 2 — Tesseract OCR (recommandée AVANT l'étape 3)
 
 ```bash
 winget install --id UB-Mannheim.TesseractOCR
