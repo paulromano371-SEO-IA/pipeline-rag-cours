@@ -105,13 +105,15 @@ rag_data/           toutes les données générées par le pipeline (chunks, emb
 
 ## Installation
 
+⚠️ **Windows uniquement.** Ce projet n'a été développé et testé que sous Windows — `requirements.txt` contient des paquets Windows-only (`win32_setctime`, `pyreadline3`), et les dépendances système ci-dessous (Tesseract, Visual C++ Build Tools) s'installent via `winget`. Aucune compatibilité macOS/Linux n'est garantie ni maintenue actuellement.
+
 ```bash
 python -m venv .venv-rag
 .venv-rag/Scripts/python.exe -m pip install -r requirements.txt
 ```
 
 Dépendances système supplémentaires (non couvertes par pip) :
-- **Tesseract OCR** : `winget install --id UB-Mannheim.TesseractOCR` (les modèles de langue français/anglais sont déjà fournis dans `.claude/skills/rag-nottext/scripts/tessdata/`)
+- **Tesseract OCR** : `winget install --id UB-Mannheim.TesseractOCR` — indépendant de l'installation pip ci-dessus, peut être fait avant ou après, mais doit être fait avant de lancer `/rag-nottext` (utilisé par `ocr_general.py` pour toute image du pipeline). Installe le binaire dans `C:\Program Files\Tesseract-OCR\tesseract.exe` : c'est l'emplacement attendu par le code (`.claude/skills/rag-nottext/scripts/ocr_general.py`), pas besoin de l'ajouter manuellement au PATH ni de redémarrer le terminal. Les modèles de langue français/anglais sont déjà fournis dans `.claude/skills/rag-nottext/scripts/tessdata/` (le paquet winget n'inclut que l'anglais).
 - **Visual C++ Build Tools** (workload "Desktop development with C++"), nécessaire pour compiler une dépendance de `pix2tex`
 
 ## Points d'attention techniques
