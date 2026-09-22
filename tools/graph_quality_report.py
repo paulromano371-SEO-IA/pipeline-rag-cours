@@ -68,7 +68,11 @@ _HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
 def _resolution_thresholds() -> tuple[float, float]:
     """Seuils de `entity_resolution.py` lus dans son source (sans l'importer :
     il tire sentence-transformers/torch) pour rester synchronises avec lui."""
-    text = (_LIB / "entity_resolution.py").read_text(encoding="utf-8")
+    entity_resolution_path = (
+        Path(__file__).resolve().parents[1]
+        / ".claude" / "skills" / "rag-graphe" / "scripts" / "entity_resolution.py"
+    )
+    text = entity_resolution_path.read_text(encoding="utf-8")
     merge = re.search(r"^MERGE_THRESHOLD\s*=\s*([0-9.]+)", text, re.MULTILINE)
     ambiguous = re.search(r"^AMBIGUOUS_THRESHOLD\s*=\s*([0-9.]+)", text, re.MULTILINE)
     return (float(merge.group(1)) if merge else 0.92, float(ambiguous.group(1)) if ambiguous else 0.80)
