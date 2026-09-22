@@ -102,11 +102,22 @@ rag_data/           toutes les données générées par le pipeline (chunks, emb
 .claude/hooks/      garde-fous exécutés automatiquement par Claude Code (voir plus bas)
 ```
 
-`corpusdedepart/`, `corpuscondense/` et `rag_data/` sont exclus du dépôt via `.gitignore` : ce sont des données volumineuses, potentiellement soumises au droit d'auteur (livres sources) ou régénérables à partir du code (base vectorielle, graphe).
+`corpusdedepart/`, `corpuscondense/` et `rag_data/` sont exclus du dépôt via `.gitignore` : ce sont des données volumineuses, potentiellement soumises au droit d'auteur (livres sources) ou régénérables à partir du code (base vectorielle, graphe). Aucun des trois n'existe donc après un `git clone`.
+
+- `corpuscondense/` et `rag_data/` sont créés automatiquement par le pipeline à la première exécution (`/cours-condense` puis les étapes suivantes) — rien à faire.
+- `corpusdedepart/` n'est en revanche créé par aucun script : c'est l'emplacement conventionnel où déposer ses PDF sources (les livres complets à condenser). À créer manuellement (`mkdir corpusdedepart`) avant la première utilisation, puis y placer ses PDF avant de lancer `/cours-condense <chemin_vers_livre.pdf>` — ou, à défaut, passer directement le chemin du PDF où qu'il se trouve, sans utiliser ce dossier.
 
 ## Installation
 
 ⚠️ **Windows uniquement.** Ce projet n'a été développé et testé que sous Windows — `requirements.txt` contient des paquets Windows-only (`win32_setctime`, `pyreadline3`), et les dépendances système ci-dessous (Tesseract, Visual C++ Build Tools) s'installent via `winget`. Aucune compatibilité macOS/Linux n'est garantie ni maintenue actuellement.
+
+### Étape 0 — Récupérer le projet
+
+Cloner (ou télécharger puis extraire) ce dépôt, puis se placer à sa racine (le dossier contenant `.claude/`, `requirements.txt`, ce `README.md`) — toutes les commandes des étapes suivantes s'exécutent depuis cet emplacement :
+```bash
+git clone https://github.com/paulromano371-SEO-IA/pipeline-rag-cours
+cd pipeline-rag-cours
+```
 
 ### Étape 1 — Visual C++ Build Tools (obligatoire AVANT l'étape 3)
 
@@ -129,6 +140,22 @@ Installe le binaire dans `C:\Program Files\Tesseract-OCR\tesseract.exe` : c'est 
 python -m venv .venv-rag
 .venv-rag/Scripts/python.exe -m pip install -r requirements.txt
 ```
+
+## Exploitation dans Claude Desktop
+
+Une fois le dépôt cloné/téléchargé et l'installation (ci-dessus) terminée :
+
+1. Ouvrir **Claude Desktop**, onglet **Code**.
+2. Ouvrir ce dossier (`pipeline-rag-cours`, celui qui contient `.claude/`) comme répertoire de travail du projet.
+3. Rien d'autre à configurer : dès que ce dossier est le répertoire de travail, Claude Code détecte automatiquement les skills sous `.claude/skills/` (visibles en tapant `/` dans la conversation) et applique les hooks de `.claude/settings.json` sans action manuelle.
+4. Déposer le(s) livre(s) source(s) (PDF) dans `corpusdedepart/` (à créer si besoin, voir plus haut).
+5. Lancer le pipeline directement dans la conversation Claude Code, par exemple :
+   ```
+   /ragpipeline corpusdedepart/mon_livre.pdf
+   ```
+   ou étape par étape avec `/cours-condense`, `/rag-extraction`, etc. (voir « Les étapes en détail » plus haut).
+
+Le venv Python (`.venv-rag/`) et Tesseract n'ont besoin d'être ni activés ni référencés manuellement : les scripts de chaque skill appellent directement `.venv-rag/Scripts/python.exe`.
 
 ## Points d'attention techniques
 
