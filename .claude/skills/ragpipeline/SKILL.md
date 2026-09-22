@@ -160,13 +160,13 @@ ligne.
    rien n'en est indexé, extrait en concepts ni relié au graphe.
 5. **`/rag-index <document_id_ou_pdf>`** — indexation vectorielle (base
    partagée `rag_data/db/vector/`).
-6. **`/rag-concepts <document_id_ou_pdf> --batch-size 40`** — extraction de
+6. **`/rag-concepts <document_id_ou_pdf> --batch-size 10`** — extraction de
    concepts par chunk, par lots.
 7. **`/rag-graphe <document_id_ou_pdf> --batch-size 10`** — résolution
    d'entités + graphe (base partagée `rag_data/db/graph/`), par lots.
 
 **Par lots, toujours** pour les étapes 3, 6 et 7 : `/rag-nottext
---batch-size 15`, `/rag-concepts --batch-size 40`, `/rag-graphe
+--batch-size 15`, `/rag-concepts --batch-size 10`, `/rag-graphe
 --batch-size 10`. Ces trois étapes font des appels `claude -p` séquentiels et
 dépasseraient, sur un livre de taille normale, les 10 minutes d'une commande
 foreground (l'application la passerait alors en arrière-plan, ce que ce
@@ -210,7 +210,7 @@ relances de la même étape (code `3`) se font sans elles :
 | `/rag-nottext` | `--force --batch-size 15` | `pivot.md` (rétabli puis ré-enrichi), `nottext_meta.json` — un appel `claude -p` par élément, la plus coûteuse |
 | `/rag-chunking` | `--force` | `chunks.json` |
 | `/rag-index` | `--force` | les chunks DE CE document dans Chroma (remplacés) |
-| `/rag-concepts` | `--reset --batch-size 40` | `concepts.json` et l'entrée `extraction_concepts` de `status.json`, supprimés dès le départ |
+| `/rag-concepts` | `--reset --batch-size 10` | `concepts.json` et l'entrée `extraction_concepts` de `status.json`, supprimés dès le départ |
 | `/rag-graphe` | `--reset --batch-size 10` | la contribution DE CE document au graphe |
 
 **`/rag-concepts` et `/rag-graphe` forcés reçoivent toujours `--reset`, même

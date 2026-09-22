@@ -44,7 +44,7 @@ le code 1.
 Un appel `claude -p` par chunk : sur un livre de plusieurs centaines de
 chunks, une seule invocation dépasse la durée maximale d'une commande
 foreground (10 minutes) et l'application la passe alors en arrière-plan.
-Passe `--batch-size N` (ex. **40**) dès le premier appel :
+Passe `--batch-size N` (ex. **10**) dès le premier appel :
 
 - Chaque invocation envoie au plus N chunks à `claude -p`, écrit leurs
   résultats dans `concepts.json`, puis s'arrête avec le code de sortie **3**
@@ -64,6 +64,38 @@ Passe `--batch-size N` (ex. **40**) dès le premier appel :
   sortie tranche : code 2 si > 5 % de chunks sans concepts) : sans cette
   règle, un chunk qui échoue à chaque tentative ferait boucler le code 3
   indéfiniment.
+
+## Un message de retour par lot (obligatoire)
+
+**Lance chaque lot avec `scripts/concepts_lot.py`** (un lot par appel, jamais
+plusieurs lots enchaînés dans une même commande : au-delà de 10 minutes
+l'application la passerait en arrière-plan) :
+
+```bash
+"<racine_projet>/.venv-rag/Scripts/python.exe" "<racine_projet>/.claude/skills/rag-concepts/scripts/concepts_lot.py" "<document_id_ou_pdf>" --batch-size 10 [--reset]
+```
+
+`--reset` uniquement sur le tout premier lot. Le script termine sa sortie par
+UNE ligne de bilan : `[LOT n/N]` (lot partiel : relancer la même commande),
+`[FIN]` (étape terminée), `[BLOQUANT]` ou `[ERREUR]`. **C'est cette ligne, et
+non le code de sortie, qui dit s'il faut relancer** : le script sort en **0**
+pour `[LOT n/N]` et `[FIN]` (un lot partiel n'est pas une erreur, et l'interface
+n'a donc pas à l'afficher comme telle), en **2** pour `[BLOQUANT]` et en **1**
+pour `[ERREUR]`. Seul `run.py` (appelé directement, sans ce script) renvoie 3 sur
+un lot partiel — convention du pipeline, inchangée.
+
+**Après CHAQUE lot, avant de lancer le suivant, écris un message dans le
+chat** qui contient : la sortie brute du script, collée dans un bloc de code
+markdown, et sa ligne `[LOT n/N]` reprise telle quelle. Sans exception :
+jamais deux lots enchaînés sans ce message entre les deux, jamais un résumé
+condensé à la place de la sortie, y compris pour les lots intermédiaires. Un
+livre de plusieurs lots donne donc autant de messages. Cette obligation
+existe parce que l'affichage de l'application replie le résultat d'une
+commande : sans ce message, un lot terminé est indiscernable d'un lot encore
+en cours.
+
+Sur `[BLOQUANT]` ou `[ERREUR]`, ne lance pas le lot suivant : rapporte la
+cause à l'utilisateur.
 
 ## Prérequis
 
