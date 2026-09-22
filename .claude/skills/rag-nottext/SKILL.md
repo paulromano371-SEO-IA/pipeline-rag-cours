@@ -226,7 +226,7 @@ puis blocs de code, puis images en dernier (voir `_process_batch` dans
 reste par ailleurs celui de `pivot.md` et de `nottext_meta.json`.
 
 1. **Formule d'affichage** (déjà en LaTeX exact dans `pivot.md`) :
-   description en langage naturel via `_rag_lib/formula_description.py`.
+   description en langage naturel via `scripts/formula_description.py`.
    Le LaTeX lui-même n'est jamais modifié.
    **Regroupé par lots de `MAX_GROUP_SIZE` (5, voir
    `_rag_lib/_claude_code_client.py`) dans un SEUL appel `claude -p`**
@@ -240,16 +240,16 @@ reste par ailleurs celui de `pivot.md` et de `nottext_meta.json`.
    tentatives marque TOUTES ses formules en erreur ; elles restent alors
    "pending" (voir "Traitement par lots") et seront retentées,
    éventuellement regroupées différemment, au prochain lot.
-2. **Bloc de code** : même principe via `_rag_lib/code_description.py`
+2. **Bloc de code** : même principe via `scripts/code_description.py`
    (`describe_code_batch`, même regroupement par 5, mêmes garanties). Le
    bloc lui-même n'est jamais modifié ; aucun renommage (pas de fichier).
 3. **Image** :
-   - **Classification déterministe** (`_rag_lib/image_classifier.py`) :
+   - **Classification déterministe** (`scripts/image_classifier.py`) :
      heuristique sur le texte déjà reconnu par un premier passage OCR
      généraliste (densité de symboles mathématiques/lettres grecques,
      longueur moyenne des mots reconnus) — jamais de jugement Claude à cette
      étape, pour rester reproductible.
-   - **Description en langage naturel** (`_rag_lib/image_vision.py`) : un
+   - **Description en langage naturel** (`scripts/image_vision.py`) : un
      appel `claude -p` headless avec l'outil `Read` restreint au dossier de
      l'image (`--add-dir`, jamais au projet entier) lit le fichier et
      retourne 1 à 3 phrases factuelles en français, mentionnant
@@ -257,10 +257,10 @@ reste par ailleurs celui de `pivot.md` et de `nottext_meta.json`.
      d'écran...).
    - **OCR adapté au type détecté** :
      - `formule` -> transcription LaTeX via pix2tex
-       (`_rag_lib/ocr_formula.py`, modèle dédié, pas un LLM) —
+       (`scripts/ocr_formula.py`, modèle dédié, pas un LLM) —
        transcription indicative pour la recherche, pas une garantie de
        LaTeX compilable à l'identique.
-     - `générale` -> texte tesseract (`_rag_lib/ocr_general.py`), uniquement
+     - `générale` -> texte tesseract (`scripts/ocr_general.py`), uniquement
        si du texte est effectivement détecté (pas d'OCR forcé sur une image
        purement graphique).
    - **Renommage explicite** : `images/page_NNN_img_NN.ext` devient
