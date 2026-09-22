@@ -107,14 +107,22 @@ rag_data/           toutes les données générées par le pipeline (chunks, emb
 
 ⚠️ **Windows uniquement.** Ce projet n'a été développé et testé que sous Windows — `requirements.txt` contient des paquets Windows-only (`win32_setctime`, `pyreadline3`), et les dépendances système ci-dessous (Tesseract, Visual C++ Build Tools) s'installent via `winget`. Aucune compatibilité macOS/Linux n'est garantie ni maintenue actuellement.
 
+**0. Visual C++ Build Tools — à installer AVANT le `pip install` ci-dessous.** `stringzilla` (dépendance de `pix2tex`) n'a pas de wheel précompilé pour Windows sur PyPI : `pip` compile ses sources localement, ce qui échoue sans compilateur C++. Aucune commande du projet n'installe ce compilateur automatiquement. Il faut supporter le standard **C++17** (n'importe quelle version de Visual Studio 2019+ ou les Build Tools 2022 conviennent, pas de version exacte à respecter) :
+```bash
+winget install --id Microsoft.VisualStudio.2022.BuildTools --override "--quiet --wait --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"
+```
+(ou `winget install --id Microsoft.VisualStudio.2022.BuildTools` sans `--override` pour l'installeur graphique, puis cocher le workload **"Desktop development with C++"** manuellement)
+
 ```bash
 python -m venv .venv-rag
 .venv-rag/Scripts/python.exe -m pip install -r requirements.txt
 ```
 
-Dépendances système supplémentaires (non couvertes par pip) :
-- **Tesseract OCR** : `winget install --id UB-Mannheim.TesseractOCR` — indépendant de l'installation pip ci-dessus, peut être fait avant ou après, mais doit être fait avant de lancer `/rag-nottext` (utilisé par `ocr_general.py` pour toute image du pipeline). Installe le binaire dans `C:\Program Files\Tesseract-OCR\tesseract.exe` : c'est l'emplacement attendu par le code (`.claude/skills/rag-nottext/scripts/ocr_general.py`), pas besoin de l'ajouter manuellement au PATH ni de redémarrer le terminal. Les modèles de langue français/anglais sont déjà fournis dans `.claude/skills/rag-nottext/scripts/tessdata/` (le paquet winget n'inclut que l'anglais).
-- **Visual C++ Build Tools** (workload "Desktop development with C++"), nécessaire pour compiler une dépendance de `pix2tex`
+**Tesseract OCR — à installer avant ou après le `pip install`, l'ordre n'a pas d'importance ici** (mais avant de lancer `/rag-nottext`, qui l'utilise via `ocr_general.py` pour toute image du pipeline) :
+```bash
+winget install --id UB-Mannheim.TesseractOCR
+```
+Installe le binaire dans `C:\Program Files\Tesseract-OCR\tesseract.exe` : c'est l'emplacement attendu par le code (`.claude/skills/rag-nottext/scripts/ocr_general.py`), pas besoin de l'ajouter manuellement au PATH ni de redémarrer le terminal. Les modèles de langue français/anglais sont déjà fournis dans `.claude/skills/rag-nottext/scripts/tessdata/` (le paquet winget n'inclut que l'anglais).
 
 ## Points d'attention techniques
 
