@@ -80,6 +80,16 @@ C'est cette étape qui permet de repérer qu'un même concept est traité dans p
 
 Enchaîne automatiquement les 7 étapes ci-dessus sur un livre source. `--from` permet de reprendre le pipeline à une étape donnée (utile après une interruption), `--force` de relancer une étape déjà marquée comme terminée.
 
+## Outils d'analyse et d'exploration (`tools/`)
+
+Scripts hors-pipeline, en lecture seule (aucun ne modifie `rag_data/`), pour explorer ou auditer le corpus déjà ingéré :
+
+- **`analyze_embedder_candidates.py`** — mesure la longueur réelle du texte qui serait embeddé (par type de contenu et au niveau des chunks) pour plusieurs modèles d'embedding candidats, afin de choisir un couple tokenizer/modèle sur données mesurées plutôt que sur des specs génériques.
+- **`analyze_retrieval_coverage.py`** — pour une requête donnée, compare la recherche vectorielle brute (top-k plat) à `retrieval.retrieve()` (section + expansion par concept via le graphe), et mesure si tout le contenu associé (formules, images, code) d'une section est effectivement remonté.
+- **`rag_query.py`** — interroge le RAG avec `retrieval.retrieve()` et affiche le résultat de façon lisible (regroupé par document puis section), pour une exploration manuelle rapide.
+- **`graph_quality_report.py`** — rapport de qualité du graphe de concepts Kuzu : métriques structurelles (volumes, alias, concepts orphelins/hubs) et échantillons à auditer pour estimer la précision de la résolution d'entités entre livres.
+- **`graphe_lot.py`** — lance un unique lot de `/rag-graphe` et termine toujours par une ligne de bilan (`[LOT n/N]`, `[FIN]`, `[BLOQUANT]` ou `[ERREUR]`) ; utile pour piloter l'étape par lots successifs sans dépasser le délai avant bascule en arrière-plan.
+
 ## Organisation des données
 
 ```
@@ -100,7 +110,7 @@ python -m venv .venv-rag
 ```
 
 Dépendances système supplémentaires (non couvertes par pip) :
-- **Tesseract OCR** : `winget install --id UB-Mannheim.TesseractOCR` (les modèles de langue français/anglais sont déjà fournis dans `.claude/skills/_rag_lib/tessdata/`)
+- **Tesseract OCR** : `winget install --id UB-Mannheim.TesseractOCR` (les modèles de langue français/anglais sont déjà fournis dans `.claude/skills/rag-nottext/scripts/tessdata/`)
 - **Visual C++ Build Tools** (workload "Desktop development with C++"), nécessaire pour compiler une dépendance de `pix2tex`
 
 ## Points d'attention techniques
