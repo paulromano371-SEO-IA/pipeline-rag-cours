@@ -7,7 +7,7 @@
 # Dependances systeme non couvertes par pip, a installer separement :
 #   - tesseract-ocr (binaire) : winget install --id UB-Mannheim.TesseractOCR
 #     Les modeles de langue fra/eng/osd sont fournis dans
-#     .claude/skills/_rag_lib/tessdata/ (le paquet winget n'inclut que l'anglais
+#     .claude/skills/rag-nottext/scripts/tessdata/ (le paquet winget n'inclut que l'anglais
 #     et ecrire dans Program Files/Tesseract-OCR/tessdata/ demande des droits
 #     admin) — ocr_general.py pointe dessus via --tessdata-dir, rien a faire.
 #   - Visual C++ Build Tools (workload "Desktop development with C++") :
@@ -70,6 +70,7 @@ httpx==0.28.1
 huggingface_hub==1.30.0
 idna==3.19
 importlib_resources==7.1.0
+install-jdk==1.1.0
 Jinja2==3.1.6
 joblib==1.6.0
 jsonschema==4.26.0
