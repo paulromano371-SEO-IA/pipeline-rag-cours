@@ -31,7 +31,7 @@ livre.pdf (corpusdedepart/)
 7. /rag-graphe       →  résolution des concepts en entités, graphe de connaissances (Kuzu)
 ```
 
-Chaque étape est une commande indépendante (un skill Claude Code), invocable seule ou enchaînée automatiquement par l'orchestrateur `/ragpipeline`. Les séparer permet à chaque étape de tourner dans un contexte de conversation frais et borné, plutôt que de tout faire exécuter par un unique agent qui accumulerait du contexte sur un livre entier.
+Chaque étape est une commande indépendante (un skill Claude Code), invocable seule ou enchaînée automatiquement par l'orchestrateur `/ragpipeline`.
 
 ## Les étapes en détail
 
