@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python \"C:\\Users\\xppx_\\Documents\\AVENIR\\Livres\\MesSupportsDeCours\\.claude\\hooks\\block_rag_background.py\"",
+            "command": "python \"${CLAUDE_PROJECT_DIR}\\.claude\\hooks\\block_rag_background.py\"",
             "timeout": 10,
             "statusMessage": "Verification pipeline RAG (foreground obligatoire)"
           }
@@ -17,7 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python \"C:\\Users\\xppx_\\Documents\\AVENIR\\Livres\\MesSupportsDeCours\\.claude\\hooks\\block_rag_extraction_subagent_read.py\"",
+            "command": "python \"${CLAUDE_PROJECT_DIR}\\.claude\\hooks\\block_rag_extraction_subagent_read.py\"",
             "timeout": 10,
             "statusMessage": "Verification pivot.md (lecture directe obligatoire)"
           }
