@@ -86,10 +86,9 @@ Scripts hors-pipeline, en lecture seule (aucun ne modifie `rag_data/`), pour exp
 
 - **`analyze_embedder_candidates.py`** — mesure la longueur réelle du texte qui serait embeddé (par type de contenu et au niveau des chunks) pour plusieurs modèles d'embedding candidats, afin de choisir un couple tokenizer/modèle sur données mesurées plutôt que sur des specs génériques.
 - **`analyze_retrieval_coverage.py`** — pour une requête donnée, compare la recherche vectorielle brute (top-k plat) à `retrieval.retrieve()` (section + expansion par concept via le graphe), et mesure si tout le contenu associé (formules, images, code) d'une section est effectivement remonté.
+- **`retrieval.py`** — module de récupération combinant recherche vectorielle, expansion par section (fil d'ariane) et expansion par concept via le graphe (`retrieval.retrieve()`), utilisé par `rag_query.py` et `analyze_retrieval_coverage.py`.
 - **`rag_query.py`** — interroge le RAG avec `retrieval.retrieve()` et affiche le résultat de façon lisible (regroupé par document puis section), pour une exploration manuelle rapide.
 - **`graph_quality_report.py`** — rapport de qualité du graphe de concepts Kuzu : métriques structurelles (volumes, alias, concepts orphelins/hubs) et échantillons à auditer pour estimer la précision de la résolution d'entités entre livres.
-
-(`graphe_lot.py`, qui pilote l'exécution par lots de `/rag-graphe`, n'est pas un outil d'exploration autonome — il fait partie du skill lui-même, voir `.claude/skills/rag-graphe/scripts/`.)
 
 ## Organisation des données
 
