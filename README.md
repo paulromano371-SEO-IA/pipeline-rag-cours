@@ -38,7 +38,7 @@ Chaque étape est une commande indépendante (un skill Claude Code), invocable s
 ### 1. `/cours-condense` — Génération du cours condensé
 `/cours-condense <chemin_vers_livre.pdf> [checkpoint=false]`
 
-Lit le livre source **intégralement** (jamais un extrait) et produit un support de cours condensé en français, compilé en PDF via LaTeX. Le texte est réécrit dans un ton pédagogique fidèle à l'auteur, le code source est repris à l'identique (jamais reformulé), et des illustrations vectorielles originales sont créées pour appuyer les explications. Aucune longueur cible n'est fixée à l'avance : le plan et la compression découlent uniquement du contenu réellement essentiel du livre.
+Lit le livre source **intégralement** (jamais un extrait) et produit un support de cours condensé en français, compilé en PDF via LaTeX. Le texte est réécrit dans un ton pédagogique, le code source est repris à l'identique (jamais reformulé), et des illustrations vectorielles originales sont créées pour appuyer les explications. Aucune longueur cible n'est fixée à l'avance : le plan et la compression découlent uniquement du contenu réellement essentiel du livre.
 
 ### 2. `/rag-extraction` — Conversion en markdown pivot
 `/rag-extraction <chemin_vers_pdf_condense>`
@@ -93,15 +93,15 @@ Scripts hors-pipeline, en lecture seule (aucun ne modifie `rag_data/`), pour exp
 ## Organisation des données
 
 ```
-corpusdedepart/     PDF sources (livres d'origine) — jamais versionné (volumineux, droits d'auteur)
-corpuscondense/     cours condensés en français, PDF finaux — jamais versionné
+corpusdedepart/     PDF sources (livres d'origine)
+corpuscondense/     cours condensés en français, PDF finaux 
 rag_data/           toutes les données générées par le pipeline (chunks, embeddings,
-                    base vectorielle Chroma, graphe Kuzu) — jamais versionné
+                    base vectorielle Chroma, graphe Kuzu)
 .claude/skills/     le code du pipeline (ce qui est versionné dans ce dépôt)
 .claude/hooks/      garde-fous exécutés automatiquement par Claude Code (voir plus bas)
 ```
 
-`corpusdedepart/`, `corpuscondense/` et `rag_data/` sont exclus du dépôt via `.gitignore` : ce sont des données volumineuses, potentiellement soumises au droit d'auteur (livres sources) ou régénérables à partir du code (base vectorielle, graphe). Aucun des trois n'existe donc après un `git clone`.
+`corpusdedepart/`, `corpuscondense/` et `rag_data/` sont exclus du dépôt via `.gitignore` : ce sont des données volumineuses. Aucun des trois n'existe donc après un `git clone`.
 
 - `corpuscondense/` et `rag_data/` sont créés automatiquement par le pipeline à la première exécution (`/cours-condense` puis les étapes suivantes) — rien à faire.
 - `corpusdedepart/` n'est en revanche créé par aucun script : c'est l'emplacement conventionnel où déposer ses PDF sources (les livres complets à condenser). À créer manuellement (`mkdir corpusdedepart`) avant la première utilisation, puis y placer ses PDF avant de lancer `/cours-condense <chemin_vers_livre.pdf>` — ou, à défaut, passer directement le chemin du PDF où qu'il se trouve, sans utiliser ce dossier.
