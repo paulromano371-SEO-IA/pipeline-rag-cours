@@ -166,7 +166,7 @@ ligne.
    d'entités + graphe (base partagée `rag_data/db/graph/`), par lots.
 
 **Par lots, toujours** pour les étapes 3, 6 et 7 : `/rag-nottext
---batch-size 15`, `/rag-concepts --batch-size 10`, `/rag-graphe
+--batch-size 10`, `/rag-concepts --batch-size 10`, `/rag-graphe
 --batch-size 10`. Ces trois étapes font des appels `claude -p` séquentiels et
 dépasseraient, sur un livre de taille normale, les 10 minutes d'une commande
 foreground (l'application la passerait alors en arrière-plan, ce que ce
@@ -207,7 +207,7 @@ relances de la même étape (code `3`) se font sans elles :
 | Étape | Lancée avec | Écrase |
 |---|---|---|
 | `/rag-extraction` | `--force` | `pivot.md`, `images/`, `meta.json` |
-| `/rag-nottext` | `--force --batch-size 15` | `pivot.md` (rétabli puis ré-enrichi), `nottext_meta.json` — un appel `claude -p` par élément, la plus coûteuse |
+| `/rag-nottext` | `--force --batch-size 10` | `pivot.md` (rétabli puis ré-enrichi), `nottext_meta.json` — un appel `claude -p` par élément, la plus coûteuse |
 | `/rag-chunking` | `--force` | `chunks.json` |
 | `/rag-index` | `--force` | les chunks DE CE document dans Chroma (remplacés) |
 | `/rag-concepts` | `--reset --batch-size 10` | `concepts.json` et l'entrée `extraction_concepts` de `status.json`, supprimés dès le départ |

@@ -122,7 +122,7 @@ lui-même fonctionne parfaitement.
 Chaque élément coûte un appel `claude -p` séquentiel (jamais parallélisé,
 voir "Exécution" ci-dessus) : un document à plusieurs dizaines d'éléments
 non-textuels peut dépasser la durée d'une seule commande bloquante. Sur un
-document de cette taille, passe `--batch-size N` (ex. 15-20) dès le premier
+document de cette taille, passe `--batch-size N` (ex. **10**) dès le premier
 appel :
 
 - Chaque invocation traite au plus N éléments, insère leurs descriptions
@@ -159,6 +159,40 @@ appel :
 - `--force` sur un traitement par lots interrompu repart intégralement de
   zéro (même comportement qu'un traitement en un seul lot) : jamais de
   reprise partielle combinée à un `--force`.
+
+## Un message de retour par lot (obligatoire)
+
+**Lance chaque lot avec `scripts/nottext_lot.py`** (un lot par appel, jamais
+plusieurs lots enchaînés dans une même commande : au-delà de 10 minutes
+l'application la passerait en arrière-plan) :
+
+```bash
+"<racine_projet>/.venv-rag/Scripts/python.exe" "<racine_projet>/.claude/skills/rag-nottext/scripts/nottext_lot.py" "<document_id_ou_pdf>" --batch-size 10 [--force] [--model NAME]
+```
+
+`--force` uniquement sur le tout premier lot. Le script termine sa sortie par
+UNE ligne de bilan : `[LOT n/N]` (lot partiel : relancer la même commande),
+`[FIN]` (étape terminée), `[BLOQUANT]` ou `[ERREUR]`. **C'est cette ligne, et
+non le code de sortie, qui dit s'il faut relancer** : le script sort en **0**
+pour `[LOT n/N]` et `[FIN]` (un lot partiel n'est pas une erreur, et l'interface
+n'a donc pas à l'afficher comme telle), en **2** pour `[BLOQUANT]` et en **1**
+pour `[ERREUR]`. Seul `run.py` (appelé directement, sans ce script) renvoie 3 sur
+un lot partiel — convention du pipeline, inchangée.
+
+**Après CHAQUE lot, avant de lancer le suivant, écris un message dans le
+chat** qui contient : la sortie brute du script, collée dans un bloc de code
+markdown, et sa ligne `[LOT n/N]` reprise telle quelle. Sans exception :
+jamais deux lots enchaînés sans ce message entre les deux, jamais un résumé
+condensé à la place de la sortie, y compris pour les lots intermédiaires —
+même exigence que "Obligation de relayer TOUTE la sortie du script" plus
+haut, désormais satisfaite par la sortie brute que `nottext_lot.py` réimprime
+avant sa ligne de bilan. Un livre de plusieurs lots donne donc autant de
+messages. Cette obligation existe parce que l'affichage de l'application
+replie le résultat d'une commande : sans ce message, un lot terminé est
+indiscernable d'un lot encore en cours.
+
+Sur `[BLOQUANT]` ou `[ERREUR]`, ne lance pas le lot suivant : rapporte la
+cause à l'utilisateur.
 
 ## Retentatives automatiques sur réponse mal formée
 
