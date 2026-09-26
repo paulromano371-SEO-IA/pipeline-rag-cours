@@ -340,12 +340,6 @@ def chunk_markdown(
         current_tokens = sum(count_tokens(b.embed_text or b.text) for b in current_blocks)
 
     for block in blocks:
-        if block.kind == "heading":
-            for level in list(heading_trail):
-                if level >= block.heading_level:
-                    del heading_trail[level]
-            heading_trail[block.heading_level] = block.text
-
         # Budget calcule sur ce qui sera reellement embedde (embed_text pour
         # un bloc fusionne code/formule/image, verbatim sinon) -- voir la
         # docstring du module. Un bloc de code volumineux mais a description
@@ -354,6 +348,16 @@ def chunk_markdown(
         block_tokens = count_tokens(block.embed_text or block.text)
         if current_blocks and current_tokens + block_tokens > target_tokens:
             _flush()
+
+        # Fil d'ariane mis a jour APRES la decision de fermer le chunk : un
+        # titre qui declenche la fermeture appartient au chunk SUIVANT, le
+        # chunk qui se ferme doit garder le fil de sa propre section (mis a
+        # jour avant, il recevait celui de la section suivante).
+        if block.kind == "heading":
+            for level in list(heading_trail):
+                if level >= block.heading_level:
+                    del heading_trail[level]
+            heading_trail[block.heading_level] = block.text
 
         current_blocks.append(block)
         current_tokens += block_tokens
