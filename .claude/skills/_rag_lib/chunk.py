@@ -107,6 +107,7 @@ class Chunk:
     has_code: bool
     embed_text: str | None = None
     has_formula: bool = False
+    has_image: bool = False
 
 
 def count_tokens(text: str) -> int:
@@ -329,6 +330,7 @@ def chunk_markdown(
                 token_count=current_tokens,
                 has_code=any(b.kind == "code" for b in current_blocks),
                 has_formula=any(b.kind == "formula" for b in current_blocks),
+                has_image=any(b.kind == "image" for b in current_blocks),
             )
         )
         carried = (

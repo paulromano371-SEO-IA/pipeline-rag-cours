@@ -46,7 +46,7 @@ STATUS_KEYS = {
 }
 
 _CHUNK_REQUIRED_KEYS = {"index", "text", "heading_trail", "token_count", "has_code"}
-_CHUNK_OPTIONAL_KEYS = {"embed_text", "has_formula"}
+_CHUNK_OPTIONAL_KEYS = {"embed_text", "has_formula", "has_image"}
 _IMAGE_REF_RE = re.compile(r"!\[[^\]]*\]\(([^)\s]+)\)")
 _MAX_LISTED = 5
 

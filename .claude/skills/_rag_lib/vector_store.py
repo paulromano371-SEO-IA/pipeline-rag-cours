@@ -117,6 +117,8 @@ def index_chunks(
             "heading_trail": " > ".join(c.heading_trail),
             "token_count": c.token_count,
             "has_code": c.has_code,
+            "has_formula": c.has_formula,
+            "has_image": c.has_image,
         }
         for c in chunks
     ]
