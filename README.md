@@ -63,32 +63,42 @@ Calcule les embeddings de chaque chunk (modèle multilingue local `BAAI/bge-m3` 
 ### 6. `/rag-concepts` — Extraction des concepts
 `/rag-concepts <pdf_condense_ou_document_id>`
 
-Pour chaque chunk indexable, un appel `claude -p` headless extrait 3 à 8 concepts significatifs (nom, forme canonique, type). Cette étape prépare la construction du graphe de connaissances de l'étape suivante.
+Pour chaque chunk indexable, un appel `claude -p` headless extrait 3 à 8 concepts significatifs (nom, forme canonique, type et définition courte `sense` : ce que le mot désigne dans ce passage, pour distinguer les homonymes d'un livre à l'autre, par exemple `lambda` en Python ou en régularisation). Cette étape prépare la construction du graphe de connaissances de l'étape suivante.
 
 ### 7. `/rag-graphe` — Construction du graphe de connaissances (GraphRAG)
 `/rag-graphe <pdf_condense_ou_document_id>`
 
-Résout chaque concept extrait en comparant sa similarité d'embedding aux concepts déjà connus du graphe (commun à tout le corpus) :
-- similarité ≥ 0.92 : fusion automatique avec un concept existant,
+Résout chaque concept extrait en comparant sa similarité d'embedding (forme canonique + définition) aux concepts déjà connus du graphe (commun à tout le corpus) :
+- similarité ≥ 0.92 et concept déjà vu dans ce même document : fusion automatique avec un concept existant,
 - similarité < 0.80 : nouveau concept,
-- entre les deux : arbitrage par un appel `claude -p` dédié.
+- entre les deux, ou ≥ 0.92 vers un concept vu seulement dans d'autres livres : arbitrage par un appel `claude -p` dédié, sur les 3 concepts les plus proches, avec la définition, le livre et un extrait du chunk de chaque côté.
 
 C'est cette étape qui permet de repérer qu'un même concept est traité dans plusieurs livres différents — l'intérêt principal du GraphRAG par rapport à une recherche vectorielle seule.
+
+Une fois le graphe du document terminé, une **consolidation** du graphe partagé (`rag-graphe/scripts/consolidate.py`, lancée par le skill, par lots) rattrape les doublons restants : les paires de concepts à similarité ≥ 0.80 sont jugées par `claude -p` et fusionnées si besoin, puis chaque concept reçoit pour forme canonique son nom le plus fréquent dans le corpus.
 
 ### Orchestrateur : `/ragpipeline`
 `/ragpipeline <chemin_vers_livre.pdf> [--from ETAPE] [--force]`
 
-Enchaîne automatiquement les 7 étapes ci-dessus sur un livre source. `--from` permet de reprendre le pipeline à une étape donnée (utile après une interruption), `--force` de relancer une étape déjà marquée comme terminée.
+Enchaîne automatiquement les 7 étapes ci-dessus sur un livre source, puis la consolidation du graphe. `--from` permet de reprendre le pipeline à une étape donnée (utile après une interruption), `--force` de relancer une étape déjà marquée comme terminée.
+
+### Audit du graphe : `/rag-integrity`
+`/rag-integrity`
+
+Hors pipeline et transversal au corpus, à lancer à la demande (par exemple après l'ajout d'un livre). En deux étapes : `report.py` calcule de façon déterministe les métriques du graphe (volumes par livre, hubs, alias suspects, fusions manquées ou à tort, doublons) et repère les cas ambigus avec des extraits de chunks réels ; puis `audit_lot.py` fait juger ces cas par `claude -p`, par lots. Les rapports, l'historique et le registre des décisions sont écrits sous `rag_data/audit/`.
 
 ## Outils d'analyse et d'exploration (`tools/`)
 
-Scripts hors-pipeline, en lecture seule (aucun ne modifie `rag_data/`), pour explorer ou auditer le corpus déjà ingéré :
+Scripts hors-pipeline pour explorer ou auditer le corpus déjà ingéré. Seuls `rename_concept.py` et `migrate_chunk_modalities.py` modifient les bases (voir leur description), les autres sont en lecture seule :
 
 - **`analyze_embedder_candidates.py`** — mesure la longueur réelle du texte qui serait embeddé (par type de contenu et au niveau des chunks) pour plusieurs modèles d'embedding candidats, afin de choisir un couple tokenizer/modèle sur données mesurées plutôt que sur des specs génériques.
 - **`analyze_retrieval_coverage.py`** — pour une requête donnée, compare la recherche vectorielle brute (top-k plat) à `retrieval.retrieve()` (section + expansion par concept via le graphe), et mesure si tout le contenu associé (formules, images, code) d'une section est effectivement remonté.
 - **`retrieval.py`** — module de récupération combinant recherche vectorielle, expansion par section (fil d'ariane) et expansion par concept via le graphe (`retrieval.retrieve()`), utilisé par `rag_query.py` et `analyze_retrieval_coverage.py`.
 - **`rag_query.py`** — interroge le RAG avec `retrieval.retrieve()` et affiche le résultat de façon lisible (regroupé par document puis section), pour une exploration manuelle rapide.
-- **`graph_quality_report.py`** — rapport de qualité du graphe de concepts Kuzu : métriques structurelles (volumes, alias, concepts orphelins/hubs) et échantillons à auditer pour estimer la précision de la résolution d'entités entre livres.
+- **`rename_concept.py`** — change la forme canonique d'un concept du graphe (le nouveau nom doit déjà être un de ses alias ; `--dry-run` pour simuler). Modifie `rag_data/db/graph/`, à ne pas lancer pendant qu'une étape du pipeline tourne.
+- **`migrate_chunk_modalities.py`** — migration ponctuelle qui ajoute `has_image` aux `chunks.json` et copie `has_formula` / `has_image` dans les métadonnées Chroma, sans ré-embedder ni toucher au graphe (simulation par défaut, `--apply` pour écrire ; la base d'origine est sauvegardée).
+
+Le rapport de qualité du graphe, ancien `graph_quality_report.py`, est désormais le skill `/rag-integrity` (ci-dessus).
 
 ## Organisation des données
 
@@ -154,7 +164,7 @@ Une fois le dépôt cloné/téléchargé et l'installation (ci-dessus) terminée
    ```
    ou étape par étape avec `/cours-condense`, `/rag-extraction`, etc. (voir « Les étapes en détail » plus haut).
 
-Le venv Python (`.venv-rag/`) et Tesseract n'ont besoin d'être ni activés ni référencés manuellement : les scripts de chaque skill appellent directement `.venv-rag/Scripts/python.exe`.
+Le venv Python (`.venv-rag/`) et Tesseract n'ont besoin d'être ni activés ni référencés manuellement : les scripts de chaque skill appellent directement `.venv-rag/Scripts/python.exe`. Un garde-fou (`_rag_lib/venv_guard.py`) relance automatiquement un script lancé par erreur avec le Python système, et un hook Claude Code (`.claude/hooks/block_system_python.py`) refuse ces commandes.
 
 ## Points d'attention techniques
 
