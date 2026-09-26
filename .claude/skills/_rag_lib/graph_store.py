@@ -317,6 +317,28 @@ class ConceptGraph:
         )
         self._verify_written(concept_id, new_canonical_form, concept.aliases, f"rename_concept({new_canonical_form!r})")
 
+    def merge_concepts(self, keep_id: str, drop_id: str, new_type: str | None = None) -> None:
+        """Fusionne le concept `drop_id` dans `keep_id` : tous les alias de
+        `drop_id` sont ajoutes a `keep_id`, tous les chunks qui mentionnaient
+        `drop_id` mentionnent `keep_id`, puis `drop_id` est supprime. Les
+        alias sont ecrits (et verifies) AVANT toute suppression : une erreur
+        laisse les deux concepts en place, jamais un concept a moitie fusionne.
+        `new_type` : nouveau type du concept conserve (None = inchange)."""
+        keep = self.get_concept(keep_id)
+        drop = self.get_concept(drop_id)
+        if keep is None or drop is None or keep_id == drop_id:
+            raise GraphIntegrityError(f"merge_concepts : concept introuvable ou identique ({keep_id}, {drop_id})")
+        for alias in drop.aliases:
+            self.add_alias(keep_id, alias)
+        for chunk_id, _doc, _idx in self.mentions_of(drop_id):
+            self.link_mention(chunk_id, keep_id)
+        self._conn.execute(
+            "MATCH (:Chunk)-[r:MENTIONS]->(c:Concept {id: $id}) DELETE r", {"id": drop_id}
+        )
+        self._conn.execute("MATCH (c:Concept {id: $id}) DELETE c", {"id": drop_id})
+        if new_type and new_type != keep.type:
+            self._conn.execute("MATCH (c:Concept {id: $id}) SET c.type = $type", {"id": keep_id, "type": new_type})
+
     def stats(self) -> dict:
         """Contenu actuel du graphe partagé : {"concepts": n, "mentions": n,
         "chunks_by_document": {document_id: n}} — sert à annoncer l'impact

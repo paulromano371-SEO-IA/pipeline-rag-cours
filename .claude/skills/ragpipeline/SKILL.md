@@ -171,6 +171,10 @@ ligne.
    concepts par chunk, par lots.
 7. **`/rag-graphe <document_id_ou_pdf> --batch-size 10`** — résolution
    d'entités + graphe (base partagée `rag_data/db/graph/`), par lots.
+   Puis, une fois `[FIN]` affiché, lance la **consolidation du graphe partagé**
+   (`rag-graphe/scripts/consolidate.py --batch-size 10`, fusion des concepts en
+   double : voir la section « Consolidation du graphe » de `/rag-graphe`), par
+   lots, jusqu'à son propre `[FIN]`. Ce n'est pas enchaîné par `graphe_lot.py`.
 
 **Par lots, toujours** pour les étapes 3, 6 et 7 : `/rag-nottext
 --batch-size 10`, `/rag-concepts --batch-size 10`, `/rag-graphe

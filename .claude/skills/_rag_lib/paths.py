@@ -42,6 +42,8 @@ COURSCONDENSE_WORK_DIR = RAG_DATA_DIR / "courscondense"
 WORK_DIR = RAG_DATA_DIR / "work"
 VECTOR_DB_PATH = RAG_DATA_DIR / "db" / "vector"
 GRAPH_DB_PATH = RAG_DATA_DIR / "db" / "graph"
+# Paires de concepts deja jugees par la consolidation du graphe (/rag-graphe, consolidate.py).
+CONSOLIDATION_DECISIONS_PATH = RAG_DATA_DIR / "db" / "consolidation_decisions.json"
 
 
 def slugify(name: str) -> str:

@@ -43,7 +43,10 @@ après un changement du prompt d'extraction de concepts ou des seuils de
 résolution d'entités, pour ne pas mélanger anciennes et nouvelles formes.
 N'agit que sur le graphe : ne réinitialise pas le stage "graphe" du
 `status.json` des documents qui y avaient déjà contribué, à faire séparément
-si une reconstruction complète est voulue.
+si une reconstruction complète est voulue. Le fichier
+`rag_data/db/consolidation_decisions.json` (jugements de la consolidation) n'est
+pas vidé : ses anciens identifiants de concepts ne correspondent plus à rien
+après un `clear()` (sans effet, mais il peut être supprimé).
 
 ## Exécution
 
@@ -138,6 +141,64 @@ message, un lot terminé est indiscernable d'un lot encore en cours.
 
 Sur `[BLOQUANT]` ou `[ERREUR]`, ne lance pas le lot suivant : rapporte la
 cause à l'utilisateur.
+
+## Consolidation du graphe (sous-étape suivante, lancée par le skill)
+
+**Quand** : une fois le graphe du document terminé, c'est-à-dire quand
+`graphe_lot.py` affiche `[FIN]` (jamais avant, jamais sur `[BLOQUANT]` ou
+`[ERREUR]`). C'est **toi**, en suivant ce skill, qui la lances : elle n'est pas
+enchaînée par `graphe_lot.py`. Elle porte sur le graphe PARTAGÉ (tout le
+corpus), pas sur un document.
+
+**À quoi ça sert** : rattraper les doublons que la résolution d'entités a
+laissés passer (ex. `numpy` / `array numpy`). Toutes les paires de concepts à
+similarité >= 0.80 sont jugées par `claude -p` (nom, type, définition, livres
+et extrait de chunk des DEUX côtés) ; sur « même concept », le moins mentionné
+est fusionné dans l'autre (`ConceptGraph.merge_concepts` : alias et liens
+reportés).
+
+**Un lot par appel, un message par lot** (mêmes règles que ci-dessus :
+foreground, jamais plusieurs lots dans une commande, sortie brute collée dans
+un bloc de code + ligne de bilan reprise telle quelle) :
+
+```bash
+"<racine_projet>/.venv-rag/Scripts/python.exe" "<racine_projet>/.claude/skills/rag-graphe/scripts/consolidate.py" --batch-size 10
+```
+
+La commande se relance identique tant que la dernière ligne est
+`[LOT n/N] consolidation ...` (`n/N` compte les lots de consolidation, pas ceux
+du graphe). Elle se termine par `[FIN]`, `[BLOQUANT]` ou `[ERREUR]` ; code de
+sortie 0 pour `[LOT]`/`[FIN]`, 2 pour `[BLOQUANT]` (intégrité du graphe :
+n'enchaîne rien), 1 pour `[ERREUR]`. `--dry-run` (propre à ce script, sans
+rapport avec celui de `--clear-graph`) liste les paires à juger et les
+renommages prévus sans rien modifier.
+
+**Règles** :
+- **Mémoire des jugements** : chaque paire jugée (fusionnée OU distincte) est
+  notée dans `rag_data/db/consolidation_decisions.json` avec les livres qui
+  mentionnaient chaque concept. Une relance ne rejuge pas une paire tranchée,
+  sauf une paire « distincte » dont l'un des concepts est mentionné depuis par
+  un NOUVEAU livre (nouveau contexte). Une décision d'un ancien format, sans
+  cette mémoire, n'est jamais rejugée.
+- **Garde sur le type** : deux concepts de types précis différents (ex. `method`
+  et `tool`) ne sont jamais jugés ni fusionnés (comptés « ignorées ») ;
+  `concept` et `other`, types génériques sur lesquels l'extraction hésite, sont
+  compatibles avec tout. À la fusion, le type précis l'emporte.
+- **Nom canonique** : au `[FIN]` de la consolidation, chaque concept prend pour
+  forme canonique son nom LE PLUS FRÉQUENT dans le corpus (mentions des
+  `concepts.json` liées à ce concept ; égalité : ordre alphabétique ; une forme
+  de 3 caractères ou moins n'est jamais choisie tant qu'un alias plus long
+  existe) : le nom ne dépend plus de l'ordre d'ingestion des livres. Alias et
+  embedding ne changent pas.
+- **Hors suivi** : la consolidation n'est pas tracée dans `status.json` et
+  échappe aux « Contrôles » ci-dessous (qui portent sur le document) ;
+  `"graphe": "done"` reste vrai même si elle échoue. Seul son propre `[FIN]`
+  dit qu'elle est terminée.
+- Elle ne touche ni aux chunks ni aux liens d'un livre, au-delà du report des
+  liens du concept supprimé vers le concept conservé.
+
+Elle peut aussi se lancer seule (même commande), par exemple après avoir
+ajouté plusieurs livres.
 
 ## Prérequis
 
