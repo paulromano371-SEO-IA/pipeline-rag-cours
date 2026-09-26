@@ -302,6 +302,21 @@ class ConceptGraph:
             {"chunk_id": chunk_id, "concept_id": concept_id},
         )
 
+    def rename_concept(self, concept_id: str, new_canonical_form: str) -> None:
+        """Change la forme canonique d'un concept. `new_canonical_form` doit deja
+        etre un de ses alias (l'invariant "la forme canonique est dans les
+        alias" reste ainsi vrai) ; alias et embedding ne sont pas modifies."""
+        concept = self.get_concept(concept_id)
+        if concept is None or new_canonical_form not in concept.aliases:
+            raise GraphIntegrityError(
+                f"rename_concept : {new_canonical_form!r} n'est pas un alias du concept {concept_id}"
+            )
+        self._conn.execute(
+            "MATCH (c:Concept {id: $id}) SET c.canonical_form = $name",
+            {"id": concept_id, "name": new_canonical_form},
+        )
+        self._verify_written(concept_id, new_canonical_form, concept.aliases, f"rename_concept({new_canonical_form!r})")
+
     def stats(self) -> dict:
         """Contenu actuel du graphe partagé : {"concepts": n, "mentions": n,
         "chunks_by_document": {document_id: n}} — sert à annoncer l'impact
