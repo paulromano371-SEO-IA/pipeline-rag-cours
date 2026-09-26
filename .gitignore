@@ -17,8 +17,12 @@ __pycache__/
 .claude/scheduled_tasks.lock
 
 # Rapports générés par tools/graph_quality_report.py
-rapport_graphe.md
+tools/rapport_graphe_*.md
 rapport_qualite_graphe.md
+tools/rapport_graphe_historique.json
+
+# Rapports generes par /rag-integrity (report.py), sous rag_data/audit/ —
+# deja couvert par le rag_data/ ci-dessus.
 
 # Divers OS/éditeur
 .DS_Store

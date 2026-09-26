@@ -19,6 +19,8 @@ source.
                                 status.json, meta.json)
         db/vector/              base Chroma UNIQUE, commune a tout le corpus
         db/graph/                graphe Kuzu UNIQUE, commun a tout le corpus
+        audit/                  rapports de /rag-integrity (qualite du graphe, historique,
+                                 verdicts d'audit) — transversal au corpus, pas par document
 
 `document_id` est derive du nom + du contenu du PDF condense (hash) : un
 fichier modifie obtient un nouveau `document_id` et repart de zero
@@ -44,6 +46,7 @@ VECTOR_DB_PATH = RAG_DATA_DIR / "db" / "vector"
 GRAPH_DB_PATH = RAG_DATA_DIR / "db" / "graph"
 # Paires de concepts deja jugees par la consolidation du graphe (/rag-graphe, consolidate.py).
 CONSOLIDATION_DECISIONS_PATH = RAG_DATA_DIR / "db" / "consolidation_decisions.json"
+AUDIT_DIR = RAG_DATA_DIR / "audit"
 
 
 def slugify(name: str) -> str:
