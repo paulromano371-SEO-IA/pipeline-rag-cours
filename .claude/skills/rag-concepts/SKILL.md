@@ -7,8 +7,17 @@ description: Extrait les concepts candidats de chaque chunk (produit par /rag-ch
 
 Pour chaque chunk (hors bruit), un appel `claude -p` headless (sans outils ni
 MCP, ne consomme pas le contexte de cette conversation) extrait 3-8 concepts
-significatifs avec nom, forme canonique et type. Un chunk dont l'extraction
-échoue est ignoré et journalisé, sans interrompre le traitement des autres.
+significatifs avec nom, forme canonique, type et **définition courte**
+(`sense`, 5 à 12 mots : ce que le mot désigne DANS CE PASSAGE). La définition
+sert à `/rag-graphe` à ne pas fusionner deux homonymes de livres différents
+(ex. `lambda` = fonction Python ou paramètre de régularisation ; `biais`
+statistique ou paramètre d'un réseau). Un chunk dont l'extraction échoue est
+ignoré et journalisé, sans interrompre le traitement des autres.
+
+**Un `concepts.json` extrait avant l'ajout de `sense` (ou dont le LLM a omis
+le champ) reste valide mais dégrade `/rag-graphe`** (résolution sur le nom
+seul) : à régénérer avec `--reset` au premier lot. Le contrôle avertit quand
+plus de 10 % des mentions n'ont pas de définition.
 
 `concepts.json` est réécrit après CHAQUE chunk traité avec succès (pas
 seulement à la fin) : une interruption (Ctrl+C, crash, timeout) ne perd
@@ -128,3 +137,5 @@ ignorés.
   après une reprise ; `n_noise` et `n_failed` sont enregistrés séparément
   dans `status.json` (`chunks_ignores` les additionne, conservé pour
   compatibilité). Relancer la même commande retente les chunks en échec.
+- **Avertissement, non bloquant** (dans la sortie du contrôle, et au contrôle
+  d'entrée de `/rag-graphe`) : plus de **10 %** des mentions sans `sense`.

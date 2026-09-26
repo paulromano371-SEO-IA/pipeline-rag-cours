@@ -5,7 +5,11 @@ Un concept nouvellement extrait est comparé par similarité d'embedding aux
 concepts déjà connus :
 
 - similarité haute (>= MERGE_THRESHOLD) : fusion automatique (ajout d'alias) —
-  cas clair, pas besoin d'arbitrage.
+  cas clair, pas besoin d'arbitrage, SAUF si le concept connu n'a jamais été
+  vu dans le document de la mention : le même mot peut désigner deux choses
+  différentes d'un livre à l'autre ("lambda" en Python / en régularisation),
+  donc ce cas va toujours à l'arbitrage, qui reçoit le sens et le contexte
+  des deux côtés.
 - similarité basse (< AMBIGUOUS_THRESHOLD) : nouveau concept.
 - entre les deux : arbitrage par un appel `claude -p` — la similarité seule
   ne suffit pas à distinguer par exemple "réseau de neurones" de "réseau de
@@ -26,6 +30,7 @@ from concepts import ConceptMention
 
 MERGE_THRESHOLD = 0.92
 AMBIGUOUS_THRESHOLD = 0.80
+MAX_ARBITRATION_CANDIDATES = 3
 
 
 def _normalize_for_containment(text: str) -> str:
@@ -53,22 +58,65 @@ def _lexically_related(a: str, b: str) -> bool:
     return na in nb or nb in na
 
 _ARBITRATION_SYSTEM_PROMPT = (
-    "Tu compares deux désignations de concepts techniques en IA/Machine "
-    "Learning pour décider s'il s'agit du MÊME concept ou de deux concepts "
-    "DIFFÉRENTS (même proches ou liés). Réponds UNIQUEMENT avec un objet "
+    "Tu compares deux concepts extraits de livres techniques pour décider "
+    "s'il s'agit du MÊME concept ou de deux concepts DIFFÉRENTS (même proches "
+    "ou liés). Le corpus mêle des livres de statistiques, de Python et de "
+    "RAG/graphes de connaissances : un même mot y a souvent des sens "
+    'différents (ex. "lambda" = fonction Python ou paramètre de '
+    'régularisation ; "biais" = biais statistique, social ou paramètre d\'un '
+    'réseau ; "generator" = composant RAG ou générateur Python ; "classe" = '
+    "classe de programmation ou catégorie à prédire). Deux noms identiques "
+    "ou proches NE SUFFISENT PAS : compare ce que chaque concept désigne, "
+    "d'après sa définition, son livre et son extrait. En cas de doute réel "
+    "sur l'identité du sens, réponds false. Le type (concept, method, tool, "
+    "metric...) est attribué à l'extraction de façon peu fiable, \"concept\" "
+    "étant le type générique : deux types différents n'excluent pas à eux "
+    "seuls un même concept, mais un outil logiciel et une méthode "
+    "mathématique distincts ne sont pas le même concept. Réponds UNIQUEMENT avec un objet "
     'JSON {"same": true} ou {"same": false}, sans texte ni balise autour.'
 )
 
+_EXCERPT_MAX_CHARS = 400
+
 EmbedFn = Callable[[list[str]], list[list[float]]]
-ArbitrateFn = Callable[[str, str], bool]
+
+
+@dataclass
+class ArbitrationSide:
+    """Ce qu'on sait d'un des deux concepts comparés."""
+    name: str
+    sense: str = ""
+    documents: tuple[str, ...] = ()
+    excerpt: str = ""
+    type: str = ""
+
+
+ArbitrateFn = Callable[[ArbitrationSide, ArbitrationSide], bool]
 
 
 class ArbitrationError(RuntimeError):
     pass
 
 
-def _arbitrate_via_claude_code(name_a: str, name_b: str, *, model: str | None = None, timeout: int = 60) -> bool:
-    prompt = f'Concept A: "{name_a}"\nConcept B: "{name_b}"'
+def _format_side(label: str, side: ArbitrationSide) -> str:
+    lines = [f'Concept {label}: "{side.name}"', f"  définition : {side.sense or '(non fournie)'}"]
+    if side.type:
+        lines.append(f"  type : {side.type}")
+    if side.documents:
+        lines.append(f"  livre(s) : {', '.join(side.documents)}")
+    if side.excerpt:
+        lines.append(f"  extrait : {side.excerpt[:_EXCERPT_MAX_CHARS]}")
+    return "\n".join(lines)
+
+
+def embedding_text(mention: ConceptMention) -> str:
+    """Texte embeddé pour une mention : forme canonique + définition. Deux
+    homonymes aux sens différents ne sont ainsi plus à similarité 1.0."""
+    return f"{mention.canonical_form} : {mention.sense}" if mention.sense else mention.canonical_form
+
+
+def _arbitrate_via_claude_code(a: ArbitrationSide, b: ArbitrationSide, *, model: str | None = None, timeout: int = 60) -> bool:
+    prompt = _format_side("A", a) + "\n\n" + _format_side("B", b)
     try:
         result = run_claude_code(_ARBITRATION_SYSTEM_PROMPT, prompt, model=model, timeout=timeout)
     except ClaudeCodeCallError as exc:
@@ -99,6 +147,8 @@ def resolve_concept(
     arbitrate_fn: ArbitrateFn | None = None,
     known_concepts: list[ConceptRecord] | None = None,
     embedding: list[float] | None = None,
+    document_id: str | None = None,
+    excerpt: str = "",
 ) -> ResolutionOutcome:
     """Résout `mention` vers un concept existant ou en crée un nouveau dans
     `graph`. `embed_fn`/`arbitrate_fn` sont injectables pour les tests
@@ -112,6 +162,12 @@ def resolve_concept(
     amont, voir `rag-graphe/scripts/run.py`, plutot que de laisser cette
     fonction embedder mention par mention). Si omis, retombe sur un appel
     individuel via `embed_fn` (utile hors-ligne / pour une mention isolee).
+    Ce vecteur doit etre celui de `embedding_text(mention)` (nom + sens).
+
+    `document_id` : document de la mention. Un concept connu jamais vu dans
+    ce document n'est jamais fusionne automatiquement (voir docstring du
+    module) ; None desactive cette regle. `excerpt` : extrait du chunk de la
+    mention, transmis a l'arbitrage.
 
     `known_concepts` évite de recharger tout le graphe (`graph.all_concepts()`,
     un scan complet de Kuzu avec désérialisation des embeddings) à chaque
@@ -123,8 +179,23 @@ def resolve_concept(
     embed = embed_fn or embed_texts
     arbitrate = arbitrate_fn or (lambda a, b: _arbitrate_via_claude_code(a, b, model=model))
 
+    mention_side = ArbitrationSide(
+        name=mention.canonical_form, sense=mention.sense,
+        documents=(document_id,) if document_id else (), excerpt=excerpt, type=mention.type,
+    )
+
+    def _side_of(concept: ConceptRecord) -> ArbitrationSide:
+        return ArbitrationSide(name=concept.canonical_form, sense=concept.sense, documents=tuple(sorted(concept.documents)), type=concept.type)
+
+    def _attach(concept: ConceptRecord) -> None:
+        graph.add_alias(concept.id, mention.canonical_form)
+        if mention.canonical_form not in concept.aliases:
+            concept.aliases.append(mention.canonical_form)
+        if document_id:
+            concept.documents.add(document_id)
+
     if embedding is None:
-        embedding = embed([mention.canonical_form])[0]
+        embedding = embed([embedding_text(mention)])[0]
     existing = graph.all_concepts() if known_concepts is None else known_concepts
 
     # Comparaison vectorisee (numpy) a TOUS les concepts connus en un seul
@@ -133,57 +204,54 @@ def resolve_concept(
     # empirique, voir `graph_store.cosine_similarities`).
     sims = cosine_similarities(embedding, [c.embedding for c in existing])
 
-    best = None
-    best_score = -1.0
-    if existing:
-        best_idx = max(range(len(existing)), key=lambda i: sims[i])
-        best, best_score = existing[best_idx], sims[best_idx]
+    best_score = max(sims) if sims else -1.0
+    ranked = sorted(range(len(existing)), key=lambda i: sims[i], reverse=True)
 
-    if best is not None and best_score >= MERGE_THRESHOLD:
-        graph.add_alias(best.id, mention.canonical_form)
-        if mention.canonical_form not in best.aliases:
-            best.aliases.append(mention.canonical_form)
-        return ResolutionOutcome(concept_id=best.id, created_new=False, matched_via="similarity", similarity_score=best_score)
+    # Fusion automatique : concept tres proche ET deja vu dans CE document.
+    for i in ranked:
+        if sims[i] < MERGE_THRESHOLD:
+            break
+        if document_id is None or document_id in existing[i].documents:
+            _attach(existing[i])
+            return ResolutionOutcome(concept_id=existing[i].id, created_new=False, matched_via="similarity", similarity_score=sims[i])
 
-    already_arbitrated_best = False
-    if best is not None and best_score >= AMBIGUOUS_THRESHOLD:
-        already_arbitrated_best = True
-        if arbitrate(mention.canonical_form, best.canonical_form):
-            graph.add_alias(best.id, mention.canonical_form)
-            if mention.canonical_form not in best.aliases:
-                best.aliases.append(mention.canonical_form)
-            return ResolutionOutcome(concept_id=best.id, created_new=False, matched_via="arbitration", similarity_score=best_score)
+    # Arbitrage des MAX_ARBITRATION_CANDIDATES concepts les plus proches (et
+    # pas seulement du premier) : le bon concept n'est pas toujours le plus
+    # ressemblant par embedding, et le comparer au seul premier laissait
+    # passer des doublons (ex. "similarity search" / "recherche par
+    # similarite vectorielle"). S'arrete au premier "meme concept".
+    arbitrated_ids: set[str] = set()
+    for i in ranked[:MAX_ARBITRATION_CANDIDATES]:
+        if sims[i] < AMBIGUOUS_THRESHOLD:
+            break
+        arbitrated_ids.add(existing[i].id)
+        if arbitrate(mention_side, _side_of(existing[i])):
+            _attach(existing[i])
+            return ResolutionOutcome(concept_id=existing[i].id, created_new=False, matched_via="arbitration", similarity_score=sims[i])
 
     # Filet de securite lexical : une forme candidate clairement apparentee
     # par inclusion de chaine (ex. "ridge" / "regularisation ridge") mais
     # dont la similarite d'embedding tombe sous AMBIGUOUS_THRESHOLD (formes
     # courtes, embedding plus bruite qu'un chunk entier -- voir
     # _lexically_related) merite quand meme un arbitrage, plutot qu'une
-    # creation automatique sans aucune verification. Ne re-arbitre jamais la
-    # meme paire deux fois (si `best` est deja ce candidat et a deja ete
-    # arbitre juste au-dessus).
-    lexical_candidate = None
-    lexical_score = -1.0
-    lexical_indices = [i for i, c in enumerate(existing) if _lexically_related(mention.canonical_form, c.canonical_form)]
+    # creation automatique sans aucune verification. Ne re-arbitre jamais un
+    # concept deja arbitre juste au-dessus.
+    lexical_indices = [
+        i for i, c in enumerate(existing)
+        if c.id not in arbitrated_ids and _lexically_related(mention.canonical_form, c.canonical_form)
+    ]
     if lexical_indices:
-        best_lexical_idx = max(lexical_indices, key=lambda i: sims[i])
-        lexical_candidate, lexical_score = existing[best_lexical_idx], sims[best_lexical_idx]
+        i = max(lexical_indices, key=lambda k: sims[k])
+        if arbitrate(mention_side, _side_of(existing[i])):
+            _attach(existing[i])
+            return ResolutionOutcome(concept_id=existing[i].id, created_new=False, matched_via="arbitration_lexical", similarity_score=sims[i])
 
-    if lexical_candidate is not None and not (lexical_candidate is best and already_arbitrated_best):
-        if arbitrate(mention.canonical_form, lexical_candidate.canonical_form):
-            graph.add_alias(lexical_candidate.id, mention.canonical_form)
-            if mention.canonical_form not in lexical_candidate.aliases:
-                lexical_candidate.aliases.append(mention.canonical_form)
-            return ResolutionOutcome(
-                concept_id=lexical_candidate.id,
-                created_new=False,
-                matched_via="arbitration_lexical",
-                similarity_score=lexical_score,
-            )
-
-    concept_id = graph.create_concept(mention.canonical_form, mention.type, mention.canonical_form, embedding)
+    concept_id = graph.create_concept(mention.canonical_form, mention.type, mention.canonical_form, embedding, sense=mention.sense)
     if known_concepts is not None:
         known_concepts.append(
-            ConceptRecord(id=concept_id, canonical_form=mention.canonical_form, type=mention.type, aliases=[mention.canonical_form], embedding=embedding)
+            ConceptRecord(
+                id=concept_id, canonical_form=mention.canonical_form, type=mention.type, aliases=[mention.canonical_form],
+                embedding=embedding, sense=mention.sense, documents={document_id} if document_id else set(),
+            )
         )
     return ResolutionOutcome(concept_id=concept_id, created_new=True, matched_via="new", similarity_score=best_score)

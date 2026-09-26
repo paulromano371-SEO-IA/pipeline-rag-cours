@@ -5,11 +5,19 @@ description: Résout les concepts extraits (produits par /rag-concepts) en entit
 
 # /rag-graphe — Étape 7 du pipeline RAG (GraphRAG)
 
-Pour chaque mention de concept, compare par similarité d'embedding aux
-concepts déjà connus du graphe partagé (tous documents confondus) :
-- similarité >= 0.92 : fusion automatique (ajout d'alias), pas d'appel LLM.
+Pour chaque mention de concept, compare par similarité d'embedding (nom +
+définition courte `sense`, produite par `/rag-concepts`) aux concepts déjà
+connus du graphe partagé (tous documents confondus) :
+- similarité >= 0.92 ET concept déjà vu dans CE document : fusion automatique
+  (ajout d'alias), pas d'appel LLM. Un concept vu seulement dans d'AUTRES
+  livres n'est jamais fusionné automatiquement : le même mot peut y avoir un
+  autre sens ("lambda" en Python / en régularisation), il va à l'arbitrage.
 - similarité < 0.80 : nouveau concept, pas d'appel LLM.
-- entre les deux : arbitrage par un appel `claude -p` dédié (même/différent).
+- entre les deux (ou >= 0.92 vers un autre livre) : arbitrage par un appel
+  `claude -p` par candidat, sur les 3 concepts les plus proches (pas
+  seulement le premier), jusqu'au premier « même concept ». L'arbitrage reçoit
+  pour chaque côté le nom, la définition, le(s) livre(s) et, pour la mention,
+  un extrait du chunk.
 
 C'est cette étape qui permet de détecter qu'un même concept est traité dans
 plusieurs documents sources différents — la valeur ajoutée du GraphRAG.

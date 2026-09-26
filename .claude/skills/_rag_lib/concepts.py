@@ -32,11 +32,18 @@ _SYSTEM_PROMPT = (
     "passage mentionnant ce même concept — nécessaire pour que deux mentions "
     "du même concept dans des passages différents partagent exactement la "
     "même forme canonique, condition pour que la résolution d'entités en "
-    "aval (comparaison d'embeddings sur cette seule forme courte) les "
-    "reconnaisse comme identiques. Limite-toi aux 3-8 concepts les plus "
-    "significatifs du passage, ignore les mots communs. Réponds UNIQUEMENT "
-    "avec un tableau JSON d'objets "
-    '{"name": ..., "canonical_form": ..., "type": ...}, sans texte ni balise autour.'
+    "aval (comparaison d'embeddings sur la forme canonique et sa "
+    "définition) les reconnaisse comme identiques. Limite-toi aux 3-8 concepts les plus "
+    "significatifs du passage, ignore les mots communs. Pour chaque concept, "
+    'donne aussi une définition très courte ("sense", 5 à 12 mots, en '
+    "français) qui dit ce que le mot désigne DANS CE PASSAGE : le corpus mêle "
+    "statistiques, Python et RAG/graphes, et un même mot peut y avoir des "
+    'sens différents (ex. "lambda" = fonction anonyme Python, ou paramètre '
+    'de régularisation ; "biais" = biais statistique, biais social des '
+    "données, ou paramètre d'un réseau de neurones). Une définition "
+    "générique qui vaudrait pour n'importe quel sens du mot ne sert à rien. "
+    "Réponds UNIQUEMENT avec un tableau JSON d'objets "
+    '{"name": ..., "canonical_form": ..., "type": ..., "sense": ...}, sans texte ni balise autour.'
 )
 
 
@@ -49,6 +56,9 @@ class ConceptMention:
     name: str
     canonical_form: str
     type: str
+    # Definition courte du sens DANS le passage ("" pour un concept extrait
+    # avant l'ajout du champ) : sert a distinguer deux homonymes en aval.
+    sense: str = ""
 
 
 def _parse_concepts(raw_json: str) -> list[ConceptMention]:
@@ -69,8 +79,10 @@ def _parse_concepts(raw_json: str) -> list[ConceptMention]:
         name = str(item.get("name", "")).strip()
         canonical = str(item.get("canonical_form", "")).strip().lower()
         type_ = item.get("type") if item.get("type") in _CONCEPT_TYPES else "other"
+        raw_sense = item.get("sense")
+        sense = raw_sense.strip() if isinstance(raw_sense, str) else ""  # une liste, un nombre... n'est pas une définition
         if name and canonical:
-            mentions.append(ConceptMention(name=name, canonical_form=canonical, type=type_))
+            mentions.append(ConceptMention(name=name, canonical_form=canonical, type=type_, sense=sense))
     return mentions
 
 

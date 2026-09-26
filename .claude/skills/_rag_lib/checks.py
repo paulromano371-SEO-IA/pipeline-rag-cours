@@ -35,6 +35,10 @@ from structural import is_structural_trail
 # Seuils décidés avec l'utilisateur : au-delà de 5 % d'échecs, l'étape est
 # bloquante (jamais un graphe/concept set "presque complet" présenté comme done).
 MAX_FAILURE_RATE = 0.05
+# Part de mentions sans "sense" (definition courte, voir concepts.py) au-dela de
+# laquelle on avertit : un concepts.json ancien (extrait avant l'ajout du champ)
+# ou un LLM qui l'omet fait retomber /rag-graphe sur une resolution par le nom seul.
+MAX_MISSING_SENSE_RATE = 0.10
 
 STATUS_KEYS = {
     "extraction": "extraction",
@@ -177,6 +181,22 @@ def _reject_structural_chunks(work_dir: Path, chunks: list[dict], res: CheckResu
         res.blocking.append(
             f"chunks.json contient {len(found)} chunk(s) de section(s) structurelle(s) "
             f"(table des matières...) : {found[:_MAX_LISTED]} — relancer /rag-chunking --force"
+        )
+
+
+def _note_missing_sense(entries: list[dict], res: "CheckResult") -> None:
+    """Avertit (sans bloquer) si trop de mentions n'ont pas de `sense`."""
+    mentions = [m for e in entries for m in e["mentions"]]
+    if not mentions:
+        return
+    missing = sum(1 for m in mentions if not str(m.get("sense") or "").strip())
+    rate = missing / len(mentions)
+    res.metrics["missing_sense_rate"] = round(rate, 4)
+    if rate > MAX_MISSING_SENSE_RATE:
+        res.notes.append(
+            f"{missing}/{len(mentions)} mention(s) sans définition ('sense', {rate:.0%} > {MAX_MISSING_SENSE_RATE:.0%}) — "
+            "concepts.json extrait avec l'ancien prompt ou définition omise par le LLM : /rag-graphe résoudra ces "
+            "mentions sur le nom seul (homonymes non distingués). Relancer /rag-concepts --reset pour les regénérer."
         )
 
 
@@ -349,6 +369,8 @@ def check_input(stage: str, work_dir: Path) -> CheckResult:
         _require_done(work_dir, "concepts", res)
         if data is not None and sum(len(e["mentions"]) for e in data) == 0:
             res.blocking.append("concepts.json ne contient aucune mention")
+        if data is not None:
+            _note_missing_sense(data, res)
         _require_writable(paths.GRAPH_DB_PATH, res, "rag_data/db/graph/")
         _require_claude_cli(res)
 
@@ -476,6 +498,7 @@ def check_output(stage: str, work_dir: Path, **kw) -> CheckResult:
             res.metrics.update(n_noise=n_noise, n_failed=len(failed), n_mentions=n_mentions, failure_rate=round(rate, 4))
             if n_mentions == 0:
                 res.blocking.append("aucun concept extrait")
+            _note_missing_sense(results, res)
             if rate > MAX_FAILURE_RATE:
                 res.blocking.append(
                     f"{len(failed)}/{len(expected)} chunks sans concepts ({rate:.1%} > seuil {MAX_FAILURE_RATE:.0%}) "

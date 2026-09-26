@@ -26,7 +26,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "_rag_lib"))
 
 from graph_store import ConceptGraph, GraphIntegrityError
-from entity_resolution import ArbitrationError, resolve_concept
+from entity_resolution import ArbitrationError, embedding_text, resolve_concept
 from concepts import ConceptMention
 from vector_store import embed_texts
 import checks
@@ -287,9 +287,18 @@ def main() -> int:
     # seul le calcul d'embedding, independant de cet ordre, est groupe. Limite
     # au lot (et non a tous les chunks restants) pour ne pas re-embedder a
     # chaque invocation ce qui sera traite dans les suivantes.
-    all_canonical_forms = [m["canonical_form"] for entry in batch_entries for m in entry["mentions"]]
-    embeddings = embed_texts(all_canonical_forms) if all_canonical_forms else []
+    mentions_of_batch = [
+        ConceptMention(name=m["name"], canonical_form=m["canonical_form"], type=m["type"], sense=m.get("sense", ""))
+        for entry in batch_entries for m in entry["mentions"]
+    ]
+    embeddings = embed_texts([embedding_text(m) for m in mentions_of_batch]) if mentions_of_batch else []
     embedding_iter = iter(embeddings)
+
+    # Texte des chunks, transmis a l'arbitrage comme extrait de contexte.
+    chunk_texts: dict[int, str] = {}
+    chunks_path = work_dir / "chunks.json"
+    if chunks_path.exists():
+        chunk_texts = {c["index"]: c["text"] for c in json.loads(chunks_path.read_text(encoding="utf-8"))}
 
     newly_done = 0
     for entry in batch_entries:
@@ -300,7 +309,7 @@ def main() -> int:
         chunk_skipped = 0
 
         for m in entry["mentions"]:
-            mention = ConceptMention(name=m["name"], canonical_form=m["canonical_form"], type=m["type"])
+            mention = ConceptMention(name=m["name"], canonical_form=m["canonical_form"], type=m["type"], sense=m.get("sense", ""))
             mention_embedding = next(embedding_iter)
             # Une mention dont l'arbitrage `claude -p` echoue (timeout, reponse
             # non-JSON...) est ignoree et journalisee, sans interrompre le
@@ -310,7 +319,10 @@ def main() -> int:
             # TOUTE la progression du document (aucun `except` ici), verifie
             # empiriquement sur un vrai run (timeout apres 229 concepts crees).
             try:
-                outcome = resolve_concept(mention, graph, known_concepts=known_concepts, embedding=mention_embedding)
+                outcome = resolve_concept(
+                    mention, graph, known_concepts=known_concepts, embedding=mention_embedding,
+                    document_id=document_id, excerpt=chunk_texts.get(chunk_index, ""),
+                )
             except ArbitrationError as exc:
                 print(
                     f"  chunk {chunk_index}: mention {mention.canonical_form!r} ignoree "

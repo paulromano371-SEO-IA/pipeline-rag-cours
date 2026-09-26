@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 import math
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import kuzu
@@ -27,9 +27,11 @@ _SCHEMA_STATEMENTS = [
     # les colonnes STRING[] relues apres reouverture remplacaient les alias des concepts
     # crees dans le lot precedent par ceux des tout premiers concepts (bug reproduit,
     # deterministe ; les colonnes STRING et DOUBLE[] n'etaient pas touchees).
-    "aliases STRING, embedding DOUBLE[], PRIMARY KEY(id))",
+    "aliases STRING, embedding DOUBLE[], sense STRING, PRIMARY KEY(id))",
     "CREATE NODE TABLE Chunk(id STRING, document_id STRING, chunk_index INT64, PRIMARY KEY(id))",
     "CREATE REL TABLE MENTIONS(FROM Chunk TO Concept)",
+    # Base creee avant l'ajout de `sense` : ajoute la colonne (ignore si deja presente).
+    "ALTER TABLE Concept ADD sense STRING DEFAULT ''",
 ]
 
 
@@ -104,6 +106,11 @@ class ConceptRecord:
     type: str
     aliases: list[str]
     embedding: list[float]
+    # Definition courte du sens du concept (voir `concepts.ConceptMention.sense`)
+    # et documents qui le mentionnent : renseignes par `all_concepts()` seulement,
+    # utilises par la resolution d'entites pour ne pas fusionner deux homonymes.
+    sense: str = ""
+    documents: set[str] = field(default_factory=set)
 
 
 class ConceptGraph:
@@ -134,7 +141,7 @@ class ConceptGraph:
             try:
                 self._conn.execute(statement)
             except RuntimeError as exc:
-                if "already exists" not in str(exc).lower():
+                if "already exists" not in str(exc).lower() and "already has property" not in str(exc).lower():
                     raise
 
     def clear(self) -> None:
@@ -198,17 +205,18 @@ class ConceptGraph:
             {"id": chunk_id, "document_id": document_id, "chunk_index": chunk_index},
         )
 
-    def create_concept(self, canonical_form: str, type_: str, alias: str, embedding: list[float]) -> str:
+    def create_concept(self, canonical_form: str, type_: str, alias: str, embedding: list[float], sense: str = "") -> str:
         concept_id = str(uuid.uuid4())
         self._conn.execute(
             "CREATE (c:Concept {id: $id, canonical_form: $canonical_form, type: $type, "
-            "aliases: $aliases, embedding: $embedding})",
+            "aliases: $aliases, embedding: $embedding, sense: $sense})",
             {
                 "id": concept_id,
                 "canonical_form": canonical_form,
                 "type": type_,
                 "aliases": dump_aliases([alias]),
                 "embedding": embedding,
+                "sense": sense,
             },
         )
         self._verify_written(concept_id, canonical_form, [alias], "create_concept")
@@ -329,13 +337,27 @@ class ConceptGraph:
         return result.get_next()[0] if result.has_next() else 0
 
     def all_concepts(self) -> list[ConceptRecord]:
+        """Tous les concepts, avec leur `sense` et l'ensemble des documents qui
+        les mentionnent (une requete supplementaire pour tous les concepts, pas
+        une par concept)."""
+        documents: dict[str, set[str]] = {}
         result = self._conn.execute(
-            "MATCH (c:Concept) RETURN c.id, c.canonical_form, c.type, c.aliases, c.embedding"
+            "MATCH (ch:Chunk)-[:MENTIONS]->(c:Concept) RETURN DISTINCT c.id, ch.document_id"
+        )
+        while result.has_next():
+            concept_id, document_id = result.get_next()
+            documents.setdefault(concept_id, set()).add(document_id)
+
+        result = self._conn.execute(
+            "MATCH (c:Concept) RETURN c.id, c.canonical_form, c.type, c.aliases, c.embedding, c.sense"
         )
         records = []
         while result.has_next():
             row = result.get_next()
-            records.append(ConceptRecord(id=row[0], canonical_form=row[1], type=row[2], aliases=load_aliases(row[3]), embedding=row[4]))
+            records.append(ConceptRecord(
+                id=row[0], canonical_form=row[1], type=row[2], aliases=load_aliases(row[3]), embedding=row[4],
+                sense=row[5] or "", documents=documents.get(row[0], set()),
+            ))
         return records
 
     def get_concept(self, concept_id: str) -> ConceptRecord | None:
