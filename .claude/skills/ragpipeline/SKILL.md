@@ -46,6 +46,13 @@ l'emplacement sous `rag_data/work/`, calculé automatiquement par
 le même chemin de PDF (ou le `document_id` qu'un script a affiché) à l'étape
 suivante.
 
+## Interpréteur Python (obligatoire)
+
+**Tout script du pipeline se lance UNIQUEMENT avec
+`"<racine_projet>/.venv-rag/Scripts/python.exe"`, jamais avec `python`/`py`.**
+Avant de lancer une étape, charge son SKILL.md et reprends sa commande exacte
+(script `run.py` ou `*_lot.py` selon l'étape) ; ne la devine jamais.
+
 ## Règle d'exécution (aucune tâche en arrière-plan)
 
 **Chaque commande (`python .../scripts/run.py ...`) s'exécute en foreground,

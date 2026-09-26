@@ -18,6 +18,11 @@ Usage:
                          [--db-path ...] [--graph-db-path ...]
 """
 from __future__ import annotations
+# Garde-fou : force l'interpreteur du projet (.venv-rag), voir _rag_lib/venv_guard.py
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(next(p for p in _Path(__file__).resolve().parents if (p / ".claude" / "skills" / "_rag_lib").is_dir()) / ".claude" / "skills" / "_rag_lib"))
+import venv_guard  # noqa: F401
 
 import argparse
 import os

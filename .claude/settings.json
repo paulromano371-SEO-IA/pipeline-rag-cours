@@ -13,6 +13,17 @@
         ]
       },
       {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"${CLAUDE_PROJECT_DIR}\\.claude\\hooks\\block_system_python.py\"",
+            "timeout": 10,
+            "statusMessage": "Verification interpreteur (.venv-rag obligatoire)"
+          }
+        ]
+      },
+      {
         "matcher": "Agent",
         "hooks": [
           {
