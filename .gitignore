@@ -27,3 +27,6 @@ tools/rapport_graphe_historique.json
 # Divers OS/éditeur
 .DS_Store
 Thumbs.db
+
+# Identifiants WordPress (tools/publish_to_wordpress.py) — voir .env.example
+.env
