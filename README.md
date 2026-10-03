@@ -87,6 +87,30 @@ Enchaîne automatiquement les 7 étapes ci-dessus sur un livre source, puis la c
 
 Hors pipeline et transversal au corpus, à lancer à la demande (par exemple après l'ajout d'un livre). En deux étapes : `report.py` calcule de façon déterministe les métriques du graphe (volumes par livre, hubs, alias suspects, fusions manquées ou à tort, doublons) et repère les cas ambigus avec des extraits de chunks réels ; puis `audit_lot.py` fait juger ces cas par `claude -p`, par lots. Les rapports, l'historique et le registre des décisions sont écrits sous `rag_data/audit/`.
 
+### Rédaction d'un article web : `/create-content`
+`/create-content <expression>` (ex. `/create-content comment fonctionne une régression logistique ?`)
+
+Hors pipeline d'ingestion : exploite le corpus déjà ingéré pour rédiger **un article web pédagogique** (Markdown + frontmatter SEO + images) sur une expression donnée. Le RAG est la **seule source de faits** : Claude ne fait que le travail éditorial (angle, progression, pédagogie) et n'apporte jamais une affirmation technique tirée de ses connaissances générales. Ce que le corpus ne couvre pas est signalé dans le rapport final, jamais comblé de mémoire.
+
+Le skill procède en 5 étapes, toujours en foreground :
+1. **Constitution du dossier** — 5 à 8 sous-requêtes (définition, intuition, formule, apprentissage, code, interprétation, limites, voisins) passées à `gather.py`, qui appelle `retrieval.retrieve()`, fusionne et dédoublonne les chunks, puis écrit `dossier.md` / `dossier.json` et copie les images. Il mesure aussi la couverture multi-livres et repère les chunks à « signal distinctif » (chiffre précis, entité nommée) pour aider à produire un contenu non générique. Lecture seule, aucun appel à un modèle de langage.
+2. **Conception** — lecture complète du dossier, choix d'une idée directrice, d'un fil conducteur concret et d'une progression du concret vers l'abstrait.
+3. **Rédaction** de `article.md` selon une trame : accroche, l'essentiel en 30 secondes, intuition, formalisation, code, lecture des résultats, pièges, pour aller plus loin, à retenir. Tutoiement imposé, aucune longueur cible.
+4. **Vérification** par `verify.py` (déterministe, bloquante) : code repris à l'identique du dossier, images et formules issues du dossier, citations de traçabilité `<!--src:Sxxx-->` valides, aucune fuite de la mécanique interne (« chunk », identifiants), structure du frontmatter, absence de vouvoiement. Elle émet aussi des avertissements (couverture non utilisée, paragraphes trop longs, variable de code possiblement non définie, légende d'image incohérente, faible part de matière distinctive).
+5. **Relecture éditoriale** (accroche, fact-check, notation unique, code, légendes) puis rapport final : couverture, lacunes du corpus, décisions éditoriales et verdict commodity / non-commodity.
+
+Sortie : `rag_data/content/<slug>/` (`article.md`, `dossier.md`, `dossier.json`, `images/`). Le skill n'écrit jamais dans les bases ni dans `rag_data/work/`.
+
+### Publication sur WordPress : `/publish-content`
+`/publish-content <slug>` (le slug est le nom du dossier sous `rag_data/content/`)
+
+Envoie sur WordPress, via l'API REST, un article produit par `/create-content`. L'article est **toujours créé en brouillon** : aucune option ne permet de le publier directement, la mise en ligne se fait à la main dans WordPress.
+
+- **Images** : chacune est uploadée avec son texte alternatif (celui de l'article), sa légende (la phrase qui suit l'image, retirée du corps pour éviter le doublon) et sa description détaillée issue du pipeline RAG. Aucun champ ne mentionne la source (livre, section). Une image déjà présente dans la médiathèque (même nom de fichier) est réutilisée au lieu d'être ré-uploadée ; `--no-check-existing` force l'upload.
+- **Contenu** : Markdown converti en HTML avec blocs image Gutenberg, commentaires de traçabilité `<!--src:...-->` retirés, titre, extrait (description SEO) et slug repris du frontmatter. Les formules LaTeX sont préservées et le shortcode `[latexpage]` ajouté pour le plugin QuickLaTeX du site.
+- **Procédure** : toujours lancer d'abord `--dry-run` (rien n'est écrit sur le site, il affiche ce qui serait envoyé et quelles images seraient réutilisées), relire, puis relancer sans l'option.
+- **Identifiants** : copier `.claude/skills/publish-content/scripts/.env.example` vers `.env` dans le même dossier et renseigner `WP_URL`, `WP_USER` et `WP_APP_PASSWORD` (mot de passe d'application WordPress, pas le mot de passe de connexion). Ce `.env` est exclu du dépôt via `.gitignore`.
+
 ## Outils d'analyse et d'exploration (`tools/`)
 
 Scripts hors-pipeline pour explorer ou auditer le corpus déjà ingéré. Seuls `rename_concept.py` et `migrate_chunk_modalities.py` modifient les bases (voir leur description), les autres sont en lecture seule :
@@ -106,7 +130,7 @@ Le rapport de qualité du graphe, ancien `graph_quality_report.py`, est désorma
 corpusdedepart/     PDF sources (livres d'origine)
 corpuscondense/     cours condensés en français, PDF finaux 
 rag_data/           toutes les données générées par le pipeline (chunks, embeddings,
-                    base vectorielle Chroma, graphe Kuzu)
+                    base vectorielle Chroma, graphe Kuzu, audits, articles dans content/)
 .claude/skills/     le code du pipeline (ce qui est versionné dans ce dépôt)
 .claude/hooks/      garde-fous exécutés automatiquement par Claude Code (voir plus bas)
 ```
