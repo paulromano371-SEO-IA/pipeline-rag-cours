@@ -1,12 +1,14 @@
 """PreToolUse hook (matcher: Bash|PowerShell) — impose l'interpreteur du projet
 (.venv-rag) pour tout script du pipeline RAG.
 
-Les scripts sous .claude/skills/rag-*/, .claude/skills/create-content/ et
-tools/ dependent de paquets installes uniquement dans <racine>/.venv-rag
-(pytesseract, chromadb, kuzu...). Les lancer avec `python`/`py` (Python
-systeme) echoue en ModuleNotFoundError ou, pire, tourne dans un mauvais
-environnement. Ce hook refuse ces commandes et donne la commande correcte.
-Complement du garde-fou `_rag_lib/venv_guard.py` (relance automatique).
+Les scripts sous .claude/skills/<skill>/scripts/ et tools/ dependent de
+paquets installes uniquement dans <racine>/.venv-rag (pytesseract, chromadb,
+kuzu...). Les lancer avec `python`/`py` (Python systeme) echoue en
+ModuleNotFoundError ou, pire, tourne dans un mauvais environnement. Ce hook
+refuse ces commandes et donne la commande correcte. Le motif ne liste pas les
+skills par nom (une nouvelle skill oubliee ici passerait sans garde-fou) :
+tout .claude/skills/*/scripts/*.py est couvert, quel que soit le nom de la
+skill. Complement du garde-fou `_rag_lib/venv_guard.py` (relance automatique).
 """
 
 import json
@@ -14,7 +16,7 @@ import re
 import sys
 
 _SCRIPT_RE = re.compile(
-    r"(?:\.claude/skills/(?:rag-[a-z]+|create-content)/scripts/|(?:^|[\s\"'/])tools/)"
+    r"(?:\.claude/skills/[\w.\-]+/scripts/|(?:^|[\s\"'/])tools/)"
     r"[\w.\-]+\.py",
     re.IGNORECASE,
 )
