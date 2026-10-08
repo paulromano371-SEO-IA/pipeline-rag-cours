@@ -51,19 +51,29 @@ mêlées à une phrase, déjà entourées de leur propre contexte de prose
 explicatif, donc déjà bien gérée par le modèle d'embedding sans description
 supplémentaire.
 
+## Interpréteur Python
+
+Tout script de ce skill se lance **uniquement** avec
+`"<racine_projet>/.venv-rag/Scripts/python.exe"`, jamais avec `python`/`py`
+(Python système). Techniquement imposé par un hook `PreToolUse` sur `Bash` et
+`PowerShell` (`.claude/hooks/block_system_python.py`, voir
+`.claude/settings.json`), qui refuse toute commande lançant un script de
+`.claude/skills/*/scripts/` ou `tools/` avec `python`/`py`. Voir `/ragpipeline`,
+section « Interpréteur Python ». `<racine_projet>` = le dossier contenant
+`.claude/`.
+
 ## Exécution
 
 Toujours en foreground, bloquant jusqu'à complétion — jamais via
-`run_in_background` ni aucun mécanisme async : le script appelle `claude -p`
-en interne (description d'image, de code, de formule) et une contention
-entre appels imbriqués peut faire timeout un appel pourtant fonctionnel
-isolément, même raison que `/rag-extraction`.
+`run_in_background` ni aucun mécanisme async, et jamais deux commandes du
+pipeline en parallèle. Techniquement imposé par un hook `PreToolUse` sur `Bash`
+(`.claude/hooks/block_rag_background.py`, voir `.claude/settings.json`), qui
+refuse tout `run_in_background: true` sur une commande référençant un script
+d'un skill du projet. Voir `/ragpipeline`, section « Pourquoi le foreground ».
 
 **Interdiction de déléguer à un sous-agent** (outil `Agent`) la lecture ou la
-vérification des images, du code, des formules, de `nottext_meta.json` ou du
-`pivot.md` enrichi — cette vérification doit être faite directement, dans le
-même tour de conversation, jamais confiée à un sous-agent "pour économiser
-du contexte".
+vérification des sorties de ce skill : elle se fait directement, dans le même
+tour de conversation, jamais « pour économiser du contexte ».
 
 ```bash
 "<racine_projet>/.venv-rag/Scripts/python.exe" "<racine_projet>/.claude/skills/rag-nottext/scripts/run.py" "<pdf_condense_ou_document_id_ou_dossier_de_travail>"
