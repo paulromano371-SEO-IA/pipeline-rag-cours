@@ -29,12 +29,35 @@ toutes par un script déterministe, jamais redemandé à Claude ni recalculé à
 chaque jugement — Claude ne voit que ce qui exige réellement un jugement
 sémantique, avec les preuves nécessaires pour le faire avec précision.
 
-## Exécuter report.py (étape 1, toujours en premier)
+## Interpréteur Python
+
+Tout script de ce skill se lance **uniquement** avec
+`"<racine_projet>/.venv-rag/Scripts/python.exe"`, jamais avec `python`/`py`
+(Python système). Techniquement imposé par un hook `PreToolUse` sur `Bash` et
+`PowerShell` (`.claude/hooks/block_system_python.py`, voir
+`.claude/settings.json`), qui refuse toute commande lançant un script de
+`.claude/skills/*/scripts/` ou `tools/` avec `python`/`py`. Voir `/ragpipeline`,
+section « Interpréteur Python ». `<racine_projet>` = le dossier contenant
+`.claude/`.
+
+## Exécution
 
 Toujours en foreground, bloquant jusqu'à complétion — jamais via
-`run_in_background`. Aucun appel `claude -p` (voir ci-dessus), donc pas de
-risque de contention, mais même règle que le reste du pipeline RAG par
-cohérence.
+`run_in_background` ni aucun mécanisme async, et jamais deux commandes du
+pipeline en parallèle. Techniquement imposé par un hook `PreToolUse` sur `Bash`
+(`.claude/hooks/block_rag_background.py`, voir `.claude/settings.json`), qui
+refuse tout `run_in_background: true` sur une commande référençant un script
+d'un skill du projet. Voir `/ragpipeline`, section « Pourquoi le foreground ».
+
+**Interdiction de déléguer à un sous-agent** (outil `Agent`) la lecture ou la
+vérification des sorties de ce skill : elle se fait directement, dans le même
+tour de conversation, jamais « pour économiser du contexte ».
+
+**Note (`claude -p`).** `report.py` (étape 1) ne fait aucun appel `claude -p` ;
+l'étape 2 (`audit_lot.py` / `audit_run.py`) en fait un par item (deux pour un
+item signalé).
+
+## Exécuter report.py (étape 1, toujours en premier)
 
 ```bash
 "<racine_projet>/.venv-rag/Scripts/python.exe" "<racine_projet>/.claude/skills/rag-integrity/scripts/report.py"
