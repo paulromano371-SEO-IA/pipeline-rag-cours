@@ -18,26 +18,38 @@ diagramme) sont exclus — critère exact (`_rag_lib/quality.py`,
 caractères non-espace sont alphabétiques. Script déterministe, aucun appel
 LLM.
 
+## Interpréteur Python
+
+Tout script de ce skill se lance **uniquement** avec
+`"<racine_projet>/.venv-rag/Scripts/python.exe"`, jamais avec `python`/`py`
+(Python système). Techniquement imposé par un hook `PreToolUse` sur `Bash` et
+`PowerShell` (`.claude/hooks/block_system_python.py`, voir
+`.claude/settings.json`), qui refuse toute commande lançant un script de
+`.claude/skills/*/scripts/` ou `tools/` avec `python`/`py`. Voir `/ragpipeline`,
+section « Interpréteur Python ». `<racine_projet>` = le dossier contenant
+`.claude/`.
+
 ## Exécution
 
 Toujours en foreground, bloquant jusqu'à complétion — jamais via
-`run_in_background` ni aucun mécanisme async. Contrairement à d'autres
-étapes, ce script ne fait aucun appel `claude -p` : la contention entre
-appels LLM imbriqués n'est donc pas la raison ici. La vraie raison, vérifiée
-empiriquement : deux processus qui initialisent en même temps un
-`PersistentClient` Chroma sur un dossier de base **pas encore créé**
-entrent en course sur la création du schéma SQLite (`InternalError: table
-collections already exists`, puis un client corrompu dans le processus
-perdant). Une fois la base déjà initialisée par un premier run, des
-invocations concurrentes sur des documents différents n'ont pas reproduit
-l'erreur dans nos tests — mais rien ne garantit cette absence de risque à
-plus grande échelle : n'exécute jamais deux invocations de `/rag-index` en
-parallèle sur cette base partagée.
+`run_in_background` ni aucun mécanisme async, et jamais deux commandes du
+pipeline en parallèle. Techniquement imposé par un hook `PreToolUse` sur `Bash`
+(`.claude/hooks/block_rag_background.py`, voir `.claude/settings.json`), qui
+refuse tout `run_in_background: true` sur une commande référençant un script
+d'un skill du projet. Voir `/ragpipeline`, section « Pourquoi le foreground ».
 
-**Interdiction de déléguer à un sous-agent** (outil `Agent`) la lecture ou
-vérification du résultat d'indexation — même raison que ci-dessus (éviter
-toute exécution concurrente sur la base partagée), pas une histoire de
-contention `claude -p` puisqu'il n'y en a aucune ici.
+**Interdiction de déléguer à un sous-agent** (outil `Agent`) la lecture ou la
+vérification des sorties de ce skill : elle se fait directement, dans le même
+tour de conversation, jamais « pour économiser du contexte ».
+
+**Note (base Chroma partagée).** Vérifié empiriquement : deux processus qui
+initialisent en même temps un `PersistentClient` Chroma sur un dossier de base
+**pas encore créé** entrent en course sur la création du schéma SQLite
+(`InternalError: table collections already exists`, puis un client corrompu
+dans le processus perdant). Une fois la base déjà initialisée par un premier
+run, des invocations concurrentes sur des documents différents n'ont pas
+reproduit l'erreur dans nos tests — mais rien ne garantit cette absence de
+risque à plus grande échelle.
 
 ```bash
 "<racine_projet>/.venv-rag/Scripts/python.exe" "<racine_projet>/.claude/skills/rag-index/scripts/run.py" "<pdf_condense_ou_document_id_ou_dossier_de_travail>"
