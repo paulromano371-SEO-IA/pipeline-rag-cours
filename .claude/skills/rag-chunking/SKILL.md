@@ -28,23 +28,34 @@ question en français au lieu de la restaurer. Un bloc pas encore traité par
 `/rag-nottext` (ou dont le traitement a échoué) n'a pas de description à
 fusionner : `embed_text` retombe alors sur le texte brut du bloc.
 
+## Interpréteur Python
+
+Tout script de ce skill se lance **uniquement** avec
+`"<racine_projet>/.venv-rag/Scripts/python.exe"`, jamais avec `python`/`py`
+(Python système). Techniquement imposé par un hook `PreToolUse` sur `Bash` et
+`PowerShell` (`.claude/hooks/block_system_python.py`, voir
+`.claude/settings.json`), qui refuse toute commande lançant un script de
+`.claude/skills/*/scripts/` ou `tools/` avec `python`/`py`. Voir `/ragpipeline`,
+section « Interpréteur Python ». `<racine_projet>` = le dossier contenant
+`.claude/`.
+
 ## Exécution
 
 Toujours en foreground, bloquant jusqu'à complétion — jamais via
-`run_in_background` ni aucun mécanisme async. Contrairement à d'autres
-étapes du pipeline, ce script ne fait aucun appel `claude -p` : la
-contention entre appels imbriqués n'est donc pas la raison ici. La vraie
-raison : deux invocations en parallèle sur le même `document_id` écriraient
-concurremment `chunks.json`/`status.json`, avec un risque de corruption ou
-d'écrasement partiel — jamais deux commandes du pipeline en parallèle sur le
-même document.
+`run_in_background` ni aucun mécanisme async, et jamais deux commandes du
+pipeline en parallèle. Techniquement imposé par un hook `PreToolUse` sur `Bash`
+(`.claude/hooks/block_rag_background.py`, voir `.claude/settings.json`), qui
+refuse tout `run_in_background: true` sur une commande référençant un script
+d'un skill du projet. Voir `/ragpipeline`, section « Pourquoi le foreground ».
 
 **Interdiction de déléguer à un sous-agent** (outil `Agent`) la lecture ou la
-vérification de `chunks.json` — pas pour éviter une contention `claude -p`
-(inexistante ici), mais pour que le compte-rendu structuré ci-dessous (en
-particulier la distinction bloquant/indicatif) soit produit par la même
-instance qui vient d'exécuter le script, dans le même tour de conversation,
-plutôt que redécidé indépendamment par un sous-agent.
+vérification des sorties de ce skill : elle se fait directement, dans le même
+tour de conversation, jamais « pour économiser du contexte ».
+
+**Compte-rendu.** Le compte-rendu structuré ci-dessous (en particulier la
+distinction bloquant/indicatif) est produit par la même instance qui vient
+d'exécuter le script, dans le même tour de conversation, plutôt que redécidé
+indépendamment par un sous-agent.
 
 ```bash
 "<racine_projet>/.venv-rag/Scripts/python.exe" "<racine_projet>/.claude/skills/rag-chunking/scripts/run.py" "<pdf_condense_ou_document_id_ou_dossier_de_travail>"
