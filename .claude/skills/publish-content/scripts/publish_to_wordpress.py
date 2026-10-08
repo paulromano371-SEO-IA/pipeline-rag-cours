@@ -56,6 +56,13 @@ from markdown_it import MarkdownIt
 
 ROOT = Path(__file__).resolve().parents[4]
 CONTENT_DIR = ROOT / "rag_data" / "content"
+
+# Sommaire cliquable : les ancres du sommaire (ecrit par create-content/toc.py)
+# pointent vers des `id` que le convertisseur Markdown ne pose pas sur les H2 ;
+# on les ajoute ici avec LA MEME fonction, pour que liens et ancres coincident.
+sys.path.insert(0, str(ROOT / ".claude" / "skills" / "create-content" / "scripts"))
+import toc as toc_mod  # noqa: E402
+import make_cover as make_cover_mod  # noqa: E402  (champs WP de la couverture)
 ENV_PATH = Path(__file__).resolve().parent / ".env"
 
 IMG_RE = re.compile(r"^!\[([^\]]*)\]\((images/[^)]+)\)\s*$")
@@ -313,10 +320,21 @@ def upload_media(cfg: dict, file_path: Path, alt_text: str, caption: str | None,
     return patch.json()
 
 
+_H2_HTML_RE = re.compile(r"<h2>(.*?)</h2>", re.DOTALL)
+
+
+def add_h2_ids(content_html: str) -> str:
+    """Pose `id` sur chaque <h2>, calcule comme le sommaire de toc.py."""
+    matches = list(_H2_HTML_RE.finditer(content_html))
+    titles = [toc_mod.plain_title(html.unescape(re.sub(r"<[^>]+>", "", m.group(1)))) for m in matches]
+    ids = iter(toc_mod.unique_ids(titles))
+    return _H2_HTML_RE.sub(lambda m: f'<h2 id="{next(ids)}">{m.group(1)}</h2>', content_html)
+
+
 def build_content_html(body: str, images: list[dict], media_by_rel: dict) -> str:
     math_store: list[str] = []
     md = MarkdownIt("commonmark").enable("table")
-    content_html = md.render(protect_math(body, math_store))
+    content_html = add_h2_ids(md.render(protect_math(body, math_store)))
 
     for img in images:
         rel = img["rel"]
@@ -358,10 +376,10 @@ def build_content_html(body: str, images: list[dict], media_by_rel: dict) -> str
 
 
 def create_post(cfg: dict, frontmatter: dict, content_html: str,
-                 dry_run: bool) -> dict:
-    # Pas d'image mise en avant : le theme WordPress l'affiche au-dessus du
-    # contenu, en plus de sa place correcte dans le corps -- ca duplique
-    # visuellement la premiere image de l'article.
+                 dry_run: bool, featured_media_id: int = 0) -> dict:
+    # Image mise en avant = <slug>.png (make_cover.py), JAMAIS une image du
+    # corps : le theme l'affiche au-dessus du contenu, une image du corps
+    # serait dupliquee visuellement.
     payload = {
         "title": frontmatter.get("title", ""),
         "content": content_html,
@@ -369,6 +387,8 @@ def create_post(cfg: dict, frontmatter: dict, content_html: str,
         "slug": frontmatter.get("slug", ""),
         "status": "draft",
     }
+    if featured_media_id:
+        payload["featured_media"] = featured_media_id
 
     if dry_run:
         print("  [dry-run] creerait le post avec :")
@@ -438,7 +458,24 @@ def main() -> None:
 
     content_html = build_content_html(body, images, media_by_rel)
 
-    post = create_post(cfg, frontmatter, content_html, args.dry_run)
+    # Image mise en avant : <slug>.png (absente -> pas d'image mise en avant).
+    cover_path = content_dir / f"{args.slug}.png"
+    featured_id = 0
+    if cover_path.exists():
+        print(f"- {cover_path.name} (image mise en avant)")
+        f = make_cover_mod.wp_fields(args.slug, frontmatter)
+        cover = upload_media(
+            cfg, cover_path,
+            md_plain(f["alt"]), md_plain(f["caption"]), md_plain(f["description"]),
+            args.dry_run,
+            check_existing=not args.no_check_existing,  # nom unique (= slug)
+        )
+        featured_id = cover["id"]
+    else:
+        print(f"ATTENTION : {args.slug}.png absent (lance make_cover.py <slug>) : "
+              "article cree sans image mise en avant.", file=sys.stderr)
+
+    post = create_post(cfg, frontmatter, content_html, args.dry_run, featured_id)
 
     print()
     print("Statut : draft")

@@ -54,10 +54,15 @@ Toute la logique est dans `scripts/publish_to_wordpress.py` de cette skill :
    vers les images uploadées), retire les commentaires de traçabilité
    `<!--src:...-->`.
 4. Crée le post WordPress **en brouillon** (titre, contenu, extrait =
-   description SEO du frontmatter, slug). Pas d'image mise en avant :
-   la plupart des thèmes WordPress l'affichent au-dessus du contenu, ce
-   qui dupliquerait visuellement la première image de l'article, déjà
-   à sa place dans le corps du texte.
+   description SEO du frontmatter, slug). L'image mise en avant est
+   `<slug>.png` (générée par `/create-content`, étape 7), uploadée avec ses
+   trois champs toujours remplis (jamais de légende vide) : Texte alternatif
+   = titre de l'article ; Légende =
+   titre de l'article ; Description =
+   description SEO du frontmatter (à défaut, le titre). Ce n'est jamais une image du corps : le
+   thème l'affiche au-dessus du contenu, ce qui dupliquerait celle-ci. Si
+   `<slug>.png` est absent, l'article est créé sans image mise en avant
+   (avertissement).
 
 **Formules LaTeX** : préservées telles quelles ($...$ et $$...$$, protégées
 du rendu Markdown pour que backslashes et underscores ne soient pas
@@ -79,9 +84,29 @@ le cherche à cet emplacement précis (`ENV_PATH` = le dossier du script
 lui-même, calculé dynamiquement, jamais en dur) — peu importe où le projet
 est installé. S'il manque, le script s'arrête en expliquant quoi renseigner.
 
+## Interpréteur Python
+
+Tout script de ce skill se lance **uniquement** avec
+`"<racine_projet>/.venv-rag/Scripts/python.exe"`, jamais avec `python`/`py`
+(Python système). Techniquement imposé par un hook `PreToolUse` sur `Bash` et
+`PowerShell` (`.claude/hooks/block_system_python.py`, voir
+`.claude/settings.json`), qui refuse toute commande lançant un script de
+`.claude/skills/*/scripts/` ou `tools/` avec `python`/`py`. Voir `/ragpipeline`,
+section « Interpréteur Python ». `<racine_projet>` = le dossier contenant
+`.claude/`.
+
 ## Exécution
 
-Toujours en foreground.
+Toujours en foreground, bloquant jusqu'à complétion — jamais via
+`run_in_background` ni aucun mécanisme async, et jamais deux commandes du
+pipeline en parallèle. Techniquement imposé par un hook `PreToolUse` sur `Bash`
+(`.claude/hooks/block_rag_background.py`, voir `.claude/settings.json`), qui
+refuse tout `run_in_background: true` sur une commande référençant un script
+d'un skill du projet. Voir `/ragpipeline`, section « Pourquoi le foreground ».
+
+**Interdiction de déléguer à un sous-agent** (outil `Agent`) la lecture ou la
+vérification des sorties de ce skill : elle se fait directement, dans le même
+tour de conversation, jamais « pour économiser du contexte ».
 
 ```bash
 "<racine_projet>/.venv-rag/Scripts/python.exe" "<racine_projet>/.claude/skills/publish-content/scripts/publish_to_wordpress.py" "<slug>" --dry-run
