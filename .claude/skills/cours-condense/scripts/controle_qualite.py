@@ -129,6 +129,20 @@ def check_mots_interdits(texte):
     return problemes
 
 
+def check_ligatures_oe(texte):
+    """Interdit les caracteres ligatures oe/OE (U+0153, U+0152) en prose : la
+    police du PDF les encode comme une ligature, que /rag-extraction relit
+    en caractere errone ("n÷ud" pour "nœud"). On ecrit donc "oe" separes
+    (noeud, coeur, oeuvre). Verifie la prose seulement (code masque)."""
+    texte_prose = _masquer(texte)
+    problemes = []
+    for m in re.finditer("[œŒ]", texte_prose):
+        ligne = ligne_de(texte, m.start())
+        contexte = texte[max(0, m.start() - 40):m.start() + 40].replace("\n", " ")
+        problemes.append({"ligne": ligne, "mot": m.group(), "contexte": contexte})
+    return problemes
+
+
 INTERDITS_MISE_EN_FORME = [
     (re.compile(r"\\mbox\{"), r"\mbox (conteneur a largeur fixe interdit, etape 4 regle 6)"),
     (re.compile(r"\\fbox\{"), r"\fbox (conteneur a largeur fixe interdit, etape 4 regle 6)"),
@@ -371,6 +385,7 @@ def main():
 
     rapport = {
         "mots_interdits": check_mots_interdits(texte),
+        "ligatures_oe_interdites": check_ligatures_oe(texte),
         "accents_manquants": check_accents_manquants(texte, verificateur),
         "accents_homographes_suspects": check_homographes_suspects(texte),
         "citations_numerotees": check_citations(texte),
@@ -386,6 +401,7 @@ def main():
 
     rapport["pret_a_compiler"] = (
         len(rapport["mots_interdits"]) == 0
+        and len(rapport["ligatures_oe_interdites"]) == 0
         and len(rapport["accents_manquants"]) == 0
         and len(rapport["citations_numerotees"]) == 0
         and len(rapport["mise_en_forme_interdite"]) == 0

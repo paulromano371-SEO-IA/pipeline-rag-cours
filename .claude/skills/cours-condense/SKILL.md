@@ -19,7 +19,7 @@ Le plan, la rédaction et la compression découlent uniquement du contenu réell
 
 ## Règle absolue : accentuation française correcte
 
-Tout texte français produit par ce skill — titres, prose des chapitres, légendes de figures, résumés de checkpoint, contenu des tableaux — doit comporter les accents et diacritiques corrects (é, è, ê, à, â, ç, ô, î, ï, û, œ...). Le fichier LaTeX généré déclare déjà `\usepackage[utf8]{inputenc}`, `\usepackage[T1]{fontenc}` et `\usepackage[french]{babel}` : rien ne justifie techniquement d'écrire sans accent, et un compilateur qui échoue sur un accent est un bug à corriger dans le préambule, jamais une raison de l'omettre.
+Tout texte français produit par ce skill — titres, prose des chapitres, légendes de figures, résumés de checkpoint, contenu des tableaux — doit comporter les accents et diacritiques corrects (é, è, ê, à, â, ç, ô, î, ï, û...). **Exception : jamais le caractère ligature « œ »/« Œ »** — on écrit toujours « oe » séparés (noeud, coeur, oeuvre, soeur), car la police du PDF l'encode comme une ligature que `/rag-extraction` relit en caractère erroné (« n÷ud »). Le contrôle qualité de l'étape 5 bloque tout « œ » en prose (clé `ligatures_oe_interdites`). Le fichier LaTeX généré déclare déjà `\usepackage[utf8]{inputenc}`, `\usepackage[T1]{fontenc}` et `\usepackage[french]{babel}` : rien ne justifie techniquement d'écrire sans accent, et un compilateur qui échoue sur un accent est un bug à corriger dans le préambule, jamais une raison de l'omettre.
 
 **Important** : le registre ou l'orthographe du présent fichier SKILL.md, à quelque moment que ce soit de son histoire, n'a **aucune valeur d'exemple** pour le contenu à produire. Ce fichier est une configuration technique interne destinée à être suivie, jamais un modèle stylistique — n'imite jamais son registre, sa concision ou son orthographe dans le cours généré. Le seul modèle de style pour le cours est la règle 0 de l'étape 3 (ton chaleureux, intuitif, fidèle à l'auteur) et le livre source lui-même.
 
@@ -36,6 +36,30 @@ L'étape 5 (contrôle qualité) vérifie mécaniquement l'absence de mots franç
   Le résumé de chaque checkpoint reste affiché intégralement (l'utilisateur doit toujours pouvoir suivre ce qui a été fait), mais au lieu d'attendre une validation, 
   enchaîne immédiatement sur l'étape suivante dans le même tour de conversation.
 - Sans cet argument (comportement par défaut), les checkpoints restent bloquants comme décrit ci-dessous.
+
+## Interpréteur Python
+
+Tout script de ce skill se lance **uniquement** avec
+`"<racine_projet>/.venv-rag/Scripts/python.exe"`, jamais avec `python`/`py`
+(Python système). Techniquement imposé par un hook `PreToolUse` sur `Bash` et
+`PowerShell` (`.claude/hooks/block_system_python.py`, voir
+`.claude/settings.json`), qui refuse toute commande lançant un script de
+`.claude/skills/*/scripts/` ou `tools/` avec `python`/`py`. Voir `/ragpipeline`,
+section « Interpréteur Python ». `<racine_projet>` = le dossier contenant
+`.claude/`.
+
+## Exécution
+
+Toujours en foreground, bloquant jusqu'à complétion — jamais via
+`run_in_background` ni aucun mécanisme async, et jamais deux commandes du
+pipeline en parallèle. Techniquement imposé par un hook `PreToolUse` sur `Bash`
+(`.claude/hooks/block_rag_background.py`, voir `.claude/settings.json`), qui
+refuse tout `run_in_background: true` sur une commande référençant un script
+d'un skill du projet. Voir `/ragpipeline`, section « Pourquoi le foreground ».
+
+**Interdiction de déléguer à un sous-agent** (outil `Agent`) la lecture ou la
+vérification des sorties de ce skill : elle se fait directement, dans le même
+tour de conversation, jamais « pour économiser du contexte ».
 
 ## Règle d'exécution (déterminisme)
 
@@ -137,19 +161,19 @@ Le contenu de ces comptes-rendus (nombres, titres, décisions) dépend entièrem
 
 1. Slugifie le nom du livre et crée l'arborescence ci-dessus — mécanique, jamais recalculé à la main :
 ```bash
-   python .claude/skills/cours-condense/scripts/initialiser_arborescence.py "<chemin_du_livre.pdf>"
+   "<racine_projet>/.venv-rag/Scripts/python.exe" "<racine_projet>/.claude/skills/cours-condense/scripts/initialiser_arborescence.py" "<chemin_du_livre.pdf>"
 ```
    Le script affiche `SLUG: <slug>` et `DOSSIER: <chemin>` : reprends cette valeur **`DOSSIER`** telle quelle comme `<nom_du_livre>` pour toute la suite du pipeline (jamais la valeur `SLUG` seule — voir "Arborescence de travail" ci-dessus), et ne la recalcule jamais toi-même (source d'incohérence si deux calculs manuels divergent en cours de session). Idempotent : n'écrase ni ne supprime rien si l'arborescence existe déjà.
 2. Exécute la cartographie mécanique :
 ```bash
-   python .claude/skills/cours-condense/scripts/extraire_structure.py "<chemin_du_livre.pdf>" "<nom_du_livre>/extraction"
+   "<racine_projet>/.venv-rag/Scripts/python.exe" "<racine_projet>/.claude/skills/cours-condense/scripts/extraire_structure.py" "<chemin_du_livre.pdf>" "<nom_du_livre>/extraction"
 ```
    Cela donne le nombre total de pages, la table des matières (si présente dans le PDF), et pour chaque page : nombre de mentions "Figure X.Y" et un score de probabilité "contient du code".
 3. Lis `structure.json`, puis lis le contenu de `extraction/pages/*.txt` par lots **regroupés par chapitre ou partie du livre, tels que repérés dans la table des matières** — jamais par tranches de lignes ou de pages arbitraires détachées de cette structure. Chaque lot doit correspondre à une unité de sens du livre (un chapitre, ou deux chapitres courts regroupés), pas à un découpage mécanique par nombre de lignes : le découpage doit être identique d'une exécution à l'autre pour un même livre, puisqu'il est entièrement déterminé par sa table des matières, jamais par un choix arbitraire fait en cours de lecture. Objectif de cette lecture : analyser l'intégralité du livre — structure complète (parties, chapitres, sous-sections), et repérage des sections contenant du code Python (croisé le score `probable_code` avec une lecture réelle — le score est un indice, pas une vérité).
 
    Pour produire chaque lot à lire, une fois les bornes `page_debut`/`page_fin` de l'unité déterminées à partir de la table des matières, utilise :
    ```bash
-   python .claude/skills/cours-condense/scripts/concatener_pages.py "<nom_du_livre>" <page_debut> <page_fin>
+   "<racine_projet>/.venv-rag/Scripts/python.exe" "<racine_projet>/.claude/skills/cours-condense/scripts/concatener_pages.py" "<nom_du_livre>" <page_debut> <page_fin>
    ```
    plutôt qu'une boucle Bash improvisée (`seq`/`printf`) : le padding sur 4 chiffres y est fixe et ne dépend jamais de la largeur de la plage, contrairement à `seq -w` qui change de comportement dès qu'une plage franchit un palier de dizaine/centaine.
 4. Avant toute rédaction, élabore un plan de cours condensé qui respecte **strictement** la chronologie du livre original. Ne fixe **aucun ratio de compression ni nombre de pages cible** a priori : la longueur finale doit découler uniquement du contenu réellement essentiel. Pour chaque grande partie du livre, décide combien de chapitres de synthèse sont nécessaires en fusionnant les sous-sections secondaires ou redondantes autour d'un même concept clé, sans jamais sauter une notion essentielle.
@@ -168,14 +192,14 @@ N'impose **aucun nombre minimum ou maximum** a priori : liste tous les concepts 
 **Validation structurelle obligatoire et mécanique, avant le calibrage visuel ci-dessous :**
 Une fois `plan_cours.json` écrit une première fois, exécute :
 ```bash
-   python .claude/skills/cours-condense/scripts/verifier_plan_cours.py "<nom_du_livre>/plan_cours.json" "<nom_du_livre>/extraction/structure.json"
+   "<racine_projet>/.venv-rag/Scripts/python.exe" "<racine_projet>/.claude/skills/cours-condense/scripts/verifier_plan_cours.py" "<nom_du_livre>/plan_cours.json" "<nom_du_livre>/extraction/structure.json"
 ```
 Ce script ne corrige rien : il vérifie que chaque chapitre a ses champs obligatoires du bon type, que chaque `pages_source` est valide (bornes croissantes, dans les limites du livre), et qu'aucun chevauchement de pages ni désordre chronologique n'existe entre deux chapitres consécutifs (la règle "chronologie stricte" de l'étape 1 devient ainsi vérifiable plutôt que laissée à l'auto-discipline). Corrige `plan_cours.json` et ré-exécute jusqu'à `"pret": true` avant de poursuivre. Un trou entre deux chapitres (préface, annexe exclue, index...) n'est pas une anomalie — seul un chevauchement ou un champ invalide l'est.
 
 **Calibrage obligatoire et mécanique (ne pas sauter — une version en simple recommandation en prose de cette règle a déjà échoué une fois : sous-comptage silencieux des concepts visuels sur plusieurs chapitres sans qu'aucune vérification ne le signale) :**
 Une fois `plan_cours.json` validé structurellement ci-dessus, exécute :
 ```bash
-   python .claude/skills/cours-condense/scripts/verifier_calibrage_visuels.py "<nom_du_livre>/plan_cours.json" "<nom_du_livre>/extraction/structure.json"
+   "<racine_projet>/.venv-rag/Scripts/python.exe" "<racine_projet>/.claude/skills/cours-condense/scripts/verifier_calibrage_visuels.py" "<nom_du_livre>/plan_cours.json" "<nom_du_livre>/extraction/structure.json"
 ```
 Ce script est un contrôle mécanique, pas une correction automatique : il ne modifie rien, il calcule la somme `nb_mentions_figure` par chapitre et signale dans `chapitres_a_verifier` tout chapitre dont le nombre de `concepts_cles_visuels` parait nettement bas par rapport à la densité de figures des autres chapitres du même livre.
 Pour chaque chapitre listé dans `chapitres_a_verifier` : retourne relire ce chapitre à la recherche de concepts structurels laissés de côté (schéma d'architecture non repéré, processus à étapes décrit en prose sans figure captionnée dans le livre mais qui reste un "processus à étapes" au sens de la règle ci-dessus, relation entre plusieurs entités, etc.), complète `concepts_cles_visuels` en conséquence, puis **ré-exécute le script** jusqu'à ce que `chapitres_a_verifier` soit vide ou que chaque chapitre restant y figurant soit explicitement justifié (voir format de compte-rendu).
@@ -209,7 +233,7 @@ Nomme chaque fichier de manière prévisible, ex. `illustrations/ch03_architectu
 
 **Vérification obligatoire et mécanique, une fois toutes les illustrations du livre générées :**
 ```bash
-   python .claude/skills/cours-condense/scripts/verifier_illustrations.py "<nom_du_livre>" "<nom_du_livre>/plan_cours.json"
+   "<racine_projet>/.venv-rag/Scripts/python.exe" "<racine_projet>/.claude/skills/cours-condense/scripts/verifier_illustrations.py" "<nom_du_livre>" "<nom_du_livre>/plan_cours.json"
 ```
 Ce script ne corrige rien : il vérifie, par chapitre, que le nombre d'images générées correspond exactement au nombre de `concepts_cles_visuels` (règle 0), que chaque fichier respecte la convention de nommage, que le script `illustrations_chapitreN.py` correspondant respecte la propreté de code exigée (règle 4 — ou délègue correctement à `DiagramBuilder.save()`, qui l'assure déjà), et qu'aucune couleur codée en dur n'échappe à la charte stricte `#1a365d`/`#c25e00` (règle 2). Corrige les anomalies signalées et ré-exécute jusqu'à `"pret": true` avant le checkpoint ci-dessous.
 
@@ -238,7 +262,7 @@ Règles impératives :
 
 1. Structure : initialise `course.tex` avec le squelette figé (`\documentclass[a4paper]{report}`, `\title`, `\author`, `\date`, puis `\maketitle`, `\tableofcontents`, `\newpage` avant le 1er `\chapter`) via :
    ```bash
-   python .claude/skills/cours-condense/scripts/initialiser_course_tex.py "<nom_du_livre>" "<titre français fidèle au sujet du livre>"
+   "<racine_projet>/.venv-rag/Scripts/python.exe" "<racine_projet>/.claude/skills/cours-condense/scripts/initialiser_course_tex.py" "<nom_du_livre>" "<titre français fidèle au sujet du livre>"
    ```
    plutôt que de le retaper à la main : un bloc à zéro variation près (seul le titre change) retapé manuellement s'est déjà corrompu une fois cette session (une correction d'accents mal ciblée a changé `a4paper` en `à4paper` directement dans le fichier, faisant planter la compilation).
 
@@ -252,7 +276,7 @@ Règles impératives :
 
     **Vérification mécanique, à exécuter avant le checkpoint de fin d'étape 3/4 :**
     ```bash
-    python .claude/skills/cours-condense/scripts/verifier_glossaire.py "<nom_du_livre>/glossaire.json" "<nom_du_livre>/course.tex"
+    "<racine_projet>/.venv-rag/Scripts/python.exe" "<racine_projet>/.claude/skills/cours-condense/scripts/verifier_glossaire.py" "<nom_du_livre>/glossaire.json" "<nom_du_livre>/course.tex"
     ```
     Ce script signale toute occurrence d'une variante listée dans `interdits`. Il ne peut rien détecter sur un terme sans `interdits` renseigné : chaque fois qu'une confusion de traduction est identifiée en te relisant, ajoute-la à `interdits` pour ce terme afin qu'elle soit automatiquement détectée dans le reste du cours.
 
@@ -289,7 +313,7 @@ Règles impératives :
 
 **Vérification mécanique, à exécuter avant le checkpoint de fin d'étape 3/4 :**
 ```bash
-python .claude/skills/cours-condense/scripts/verifier_structure_course_tex.py "<nom_du_livre>/course.tex" "<nom_du_livre>/plan_cours.json"
+"<racine_projet>/.venv-rag/Scripts/python.exe" "<racine_projet>/.claude/skills/cours-condense/scripts/verifier_structure_course_tex.py" "<nom_du_livre>/course.tex" "<nom_du_livre>/plan_cours.json"
 ```
 Ce script ne corrige rien : il vérifie que chaque `lstlisting` est bien suivi d'une phrase d'explication (règle 6), que chaque chapitre `contient_code: true` a effectivement du code et inversement (règle 6), que chaque `\includegraphics` est dans un `figure`/`caption`/`label` complet (règle 7), et que chaque chapitre se termine par un `\section*{Résumé}` (règle 11 ci-dessous). Corrige les anomalies signalées et ré-exécute jusqu'à `"pret": true`.
 La clé `figures_entre_listings_a_verifier` du rapport est indicative seulement (jamais bloquante, comme `accents_homographes_suspects` à l'étape 5) : distinguer une figure qui coupe un exemple continu d'une figure qui sépare légitimement deux exemples déjà expliqués exige de comprendre le rapport entre les deux blocs de code, ce qu'aucun motif syntaxique ne capture de manière fiable — juge chaque occurrence signalée au cas par cas.
@@ -314,7 +338,7 @@ Ne compile pas le PDF à cette étape.
 
 **Blocs fixes (règles 1, 2, 3, 5 première moitié, 7 ci-dessous) : insérés par script, jamais retapés à la main.** Un bloc à zéro variation d'un livre à l'autre, retapé manuellement, s'est déjà corrompu cette session (`a4paper`→`à4paper`, `1a365d`→`1à365d`, via une correction d'accents mal ciblée passée dessus plus tard). Exécute en premier :
 ```bash
-python .claude/skills/cours-condense/scripts/appliquer_preambule_etape4.py "<nom_du_livre>"
+"<racine_projet>/.venv-rag/Scripts/python.exe" "<racine_projet>/.claude/skills/cours-condense/scripts/appliquer_preambule_etape4.py" "<nom_du_livre>"
 ```
 Ce script insère, une seule fois et juste avant `\begin{document}`, l'intégralité des blocs LaTeX fixes des règles 1, 2, 3, 5 (première moitié) et 7 ci-dessous (listings, ligatures/langue/encadrés, tableaux, anti-coupures section/subsection, marges/titres de chapitre). Idempotent : ne fait rien s'il a déjà tourné. Le contenu exact de chaque bloc reste documenté ci-dessous pour référence, mais ne le retape jamais toi-même dans `course.tex`.
 
@@ -345,7 +369,7 @@ Ce script insère, une seule fois et juste avant `\begin{document}`, l'intégral
 
    **Deuxième moitié (par lstlisting) — script séparé, à exécuter juste après `appliquer_preambule_etape4.py` :**
    ```bash
-   python .claude/skills/cours-condense/scripts/inserer_needspace_listings.py "<nom_du_livre>"
+   "<racine_projet>/.venv-rag/Scripts/python.exe" "<racine_projet>/.claude/skills/cours-condense/scripts/inserer_needspace_listings.py" "<nom_du_livre>"
    ```
    Ce script compte lui-même les lignes réelles de chaque `lstlisting` et insère `\Needspace{(N+5)\baselineskip}` juste avant, sauf s'il dépasse une page pleine (coupure alors inévitable, pas un défaut). C'est cette moitié de la règle, purement mécanique mais dépourvue de script jusqu'ici, dont l'omission a produit des blocs de code coupés en deux pages dans une version antérieure du cours — ne t'y substitue plus manuellement, ce script s'en charge pour chacun des `lstlisting` du fichier en une seule exécution.
    ```latex
@@ -378,13 +402,13 @@ Ce script insère, une seule fois et juste avant `\begin{document}`, l'intégral
 
 1. Exécute d'abord le correcteur automatique d'accents, **avant** le contrôle qualité :
 	```bash
-	   python .claude/skills/cours-condense/scripts/corriger_accents.py "<nom_du_livre>/course.tex"
+	   "<racine_projet>/.venv-rag/Scripts/python.exe" "<racine_projet>/.claude/skills/cours-condense/scripts/corriger_accents.py" "<nom_du_livre>/course.tex"
 	```
    Ce script combine plusieurs outils complémentaires (dictionnaire français, LanguageTool, analyse grammaticale spaCy, heuristiques a/à et ou/où) pour corriger automatiquement, en boucle jusqu'à stabilisation, la grande majorité des accents manquants — un simple dictionnaire ne suffit pas : il ne voit ni les homographes grammaticaux (a/à, ou/où — les deux formes sont chacune un mot valide), ni les conjugaisons ambiguës (un verbe du 1er groupe au présent et son participe passé masculin singulier sont orthographiquement identiques sans accent, ex. "impressionne"). Le script journalise chaque correction appliquée ; affiche un résumé chiffré par outil dans le compte-rendu de cette étape. Ne modifie jamais le code (`lstlisting`/`\lstinline`/commentaires). Au premier lancement sur un poste donné, télécharge automatiquement ses dépendances (JRE portable, modèle spaCy) — normal, pas une erreur.
 
 2. Exécute ensuite le contrôle qualité, sur le fichier déjà corrigé :
 	```bash
-	   python .claude/skills/cours-condense/scripts/controle_qualite.py "<nom_du_livre>/course.tex"
+	   "<racine_projet>/.venv-rag/Scripts/python.exe" "<racine_projet>/.claude/skills/cours-condense/scripts/controle_qualite.py" "<nom_du_livre>/course.tex"
 	```
    Cela vérifie automatiquement :
    - absence de "youtube", "vidéo", "timestamp"
@@ -399,7 +423,7 @@ Ce script insère, une seule fois et juste avant `\begin{document}`, l'intégral
 
 5. Sinon, ajoute au préambule de `course.tex` (une seule fois) le bloc fixe `hyperref`/`cleveref` — même catégorie que les blocs figés de l'étape 4 : gabarit inséré par script, jamais retapé à la main :
 	```bash
-	   python .claude/skills/cours-condense/scripts/appliquer_hyperref_etape5.py "<nom_du_livre>" "<titre_du_cours>"
+	   "<racine_projet>/.venv-rag/Scripts/python.exe" "<racine_projet>/.claude/skills/cours-condense/scripts/appliquer_hyperref_etape5.py" "<nom_du_livre>" "<titre_du_cours>"
 	```
    Ce script insère, une seule fois et juste avant `\begin{document}`, `\usepackage[colorlinks=true, ...]{hyperref}`, `\hypersetup{...}` et `\usepackage{cleveref}` (dans cet ordre : `cleveref` doit venir juste après `hyperref`). Idempotent.
 
@@ -409,7 +433,7 @@ Ce script insère, une seule fois et juste avant `\begin{document}`, l'intégral
 
 1. Compile :
 	```bash
-	   python .claude/skills/cours-condense/scripts/compiler.py "<nom_du_livre>/course.tex" "<nom_clair_du_cours>"
+	   "<racine_projet>/.venv-rag/Scripts/python.exe" "<racine_projet>/.claude/skills/cours-condense/scripts/compiler.py" "<nom_du_livre>/course.tex" "<nom_clair_du_cours>"
 	```
    Rapporte : succès/échec de chaque passe, erreurs ou warnings éventuels (le script les extrait automatiquement des logs).
 
