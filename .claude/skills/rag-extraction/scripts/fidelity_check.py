@@ -102,7 +102,15 @@ def _normalize_code(text: str) -> str:
     """Compare le CONTENU (indentation/espaces internes comprise, car
     significative en Python), seulement insensible aux espaces de fin de
     ligne et aux lignes vides superflues en tête/queue — jamais une
-    normalisation agressive qui masquerait une vraie troncature."""
+    normalisation agressive qui masquerait une vraie troncature.
+
+    Seule exception : accent grave et apostrophes (`, ‘, ’) sont comparés comme
+    équivalents. `listings` imprime l'accent grave d'un code `course.tex` en
+    apostrophe courbe dans le PDF, et l'extraction lit donc une apostrophe là
+    où la source LaTeX a un accent grave (typiquement dans un commentaire) :
+    un écart de rendu, pas une perte de contenu. Ne sert qu'à la comparaison,
+    jamais à écrire `pivot.md`."""
+    text = text.replace("`", "'").replace("‘", "'").replace("’", "'")
     lines = [ln.rstrip() for ln in text.split("\n")]
     return "\n".join(lines).strip("\n")
 

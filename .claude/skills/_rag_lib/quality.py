@@ -12,6 +12,8 @@ from __future__ import annotations
 import unicodedata
 from dataclasses import dataclass, field
 
+from structural import is_structural_heading
+
 _REPLACEMENT_CHAR = "�"
 _ALLOWED_CONTROL_CHARS = {"\n", "\t", "\r"}
 _ENCODING_ISSUE_RATIO_THRESHOLD = 0.01
@@ -121,12 +123,44 @@ def is_noise_text(text: str, *, min_length: int = NOISE_MIN_LENGTH, threshold: f
     return _alphabetic_ratio(text) < threshold
 
 
+def structural_page_numbers(pages) -> set[int]:
+    """Numéros des pages qui appartiennent à une section structurelle (table
+    des matières, index... — liste unique de `structural.py`, celle que
+    `/rag-chunking` exclut via `drop_structural_sections`).
+
+    Même règle que `drop_structural_sections` : une section structurelle
+    s'étend de son titre jusqu'au prochain titre de niveau égal ou supérieur,
+    et peut courir sur plusieurs pages. Une page est retenue si une section
+    structurelle est déjà ouverte à son début, ou s'y ouvre. Ne modifie rien
+    du texte extrait : sert uniquement à écarter ces pages de
+    `non_textual_noise` (les points de conduite d'une table des matières font
+    chuter le ratio alphabétique sans qu'il s'agisse d'un diagramme)."""
+    skip_level: int | None = None
+    structural: set[int] = set()
+    for page in pages:
+        if skip_level is not None:
+            structural.add(page.page_number)
+        for line in page.markdown.splitlines():
+            stripped = line.lstrip()
+            if not stripped.startswith("#"):
+                continue
+            level = len(stripped) - len(stripped.lstrip("#"))
+            title = stripped[level:].strip()
+            if skip_level is not None and level <= skip_level:
+                skip_level = None
+            if skip_level is None and is_structural_heading(title):
+                skip_level = level
+                structural.add(page.page_number)
+    return structural
+
+
 def assess_extraction_quality(result) -> QualityReport:
     """`result` : une `convert.ExtractionResult` (voir
     `rag-extraction/scripts/convert.py`) — pas de dépendance d'import ici,
     `convert.py` n'est utilisé que par `/rag-extraction`, contrairement à ce
     module partagé par plusieurs étapes du pipeline."""
     report = QualityReport()
+    structural_pages = structural_page_numbers(result.pages)
 
     for page in result.pages:
         ratio = _replacement_char_ratio(page.markdown)
@@ -151,7 +185,7 @@ def assess_extraction_quality(result) -> QualityReport:
                 )
             )
 
-        if is_noise_text(page.markdown):
+        if page.page_number not in structural_pages and is_noise_text(page.markdown):
             report.issues.append(
                 QualityIssue(
                     page.page_number,

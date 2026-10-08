@@ -239,31 +239,32 @@ au-delà de simples artefacts d'extraction :
   (`unresolved_control_char` dans `quality.py`, jamais bloquant, jamais une
   perte silencieuse).
 
-## Execution
+## Interpréteur Python
 
-Toujours en foreground, bloquant jusqu'a complétion — jamais via
-`run_in_background` ni aucun mécanisme async, par cohérence avec les autres
-étapes du pipeline (`/cours-condense`, `/rag-concepts`, `/rag-graphe`...) qui
-font, elles, des appels `claude -p` internes et risquent une contention si
-lancées en arrière-plan ou en parallèle d'une autre étape. `/rag-extraction`
-elle-même n'a plus d'appel `claude -p` interne (la réparation des ligatures
-est un dictionnaire hors ligne, voir `ligature_repair.py`), mais garde la
-même règle pour rester prévisible d'une étape à l'autre. Techniquement
-imposé par un hook `PreToolUse` sur `Bash`
+Tout script de ce skill se lance **uniquement** avec
+`"<racine_projet>/.venv-rag/Scripts/python.exe"`, jamais avec `python`/`py`
+(Python système). Techniquement imposé par un hook `PreToolUse` sur `Bash` et
+`PowerShell` (`.claude/hooks/block_system_python.py`, voir
+`.claude/settings.json`), qui refuse toute commande lançant un script de
+`.claude/skills/*/scripts/` ou `tools/` avec `python`/`py`. Voir `/ragpipeline`,
+section « Interpréteur Python ». `<racine_projet>` = le dossier contenant
+`.claude/`.
+
+## Exécution
+
+Toujours en foreground, bloquant jusqu'à complétion — jamais via
+`run_in_background` ni aucun mécanisme async, et jamais deux commandes du
+pipeline en parallèle. Techniquement imposé par un hook `PreToolUse` sur `Bash`
 (`.claude/hooks/block_rag_background.py`, voir `.claude/settings.json`), qui
 refuse tout `run_in_background: true` sur une commande référençant un script
-du pipeline RAG.
+d'un skill du projet. Voir `/ragpipeline`, section « Pourquoi le foreground ».
 
-**Interdiction de déléguer à un sous-agent** (outil `Agent`) toute lecture ou
-vérification de `pivot.md` ou du rapport qualité — cette lecture doit être
-faite directement, dans le même tour de conversation, jamais confiée à un
-sous-agent "pour économiser du contexte" : même raison que ci-dessus,
-préserver le déterminisme et éviter toute contention entre appels imbriqués.
-Techniquement imposé par un hook `PreToolUse` sur `Agent`
+**Interdiction de déléguer à un sous-agent** (outil `Agent`) la lecture ou la
+vérification des sorties de ce skill : elle se fait directement, dans le même
+tour de conversation, jamais « pour économiser du contexte ». Techniquement imposé pour
+`pivot.md` et `rag_data/work/` par un hook `PreToolUse` sur `Agent`
 (`.claude/hooks/block_rag_extraction_subagent_read.py`, voir
-`.claude/settings.json`), qui refuse tout appel `Agent` dont le prompt
-référence `pivot.md` ou `rag_data/work/` — même mécanisme que le hook
-`run_in_background` ci-dessus.
+`.claude/settings.json`).
 
 ```bash
 "<racine_projet>/.venv-rag/Scripts/python.exe" "<racine_projet>/.claude/skills/rag-extraction/scripts/run.py" "<racine_projet>/corpuscondense/<nom_du_pdf>.pdf"
