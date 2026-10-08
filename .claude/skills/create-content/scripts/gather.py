@@ -15,11 +15,16 @@ requete, fusionne et dedoublonne les chunks, puis ecrit sous
     images/       copie des images referencees (noms uniques par livre), pour
                   que l'article final soit autonome et publiable tel quel
 
+Chaque sous-requete porte la FACETTE qu'elle sert, sous la forme
+`--query "nature::qu'est-ce que ..."` (facette = une ligne du catalogue de
+l'intention, voir SKILL.md etape 2). Le compte rendu donne la couverture par
+facette ; une requete sans `::` est signalee (facette non etiquetee).
+
 Le dossier est la SEULE source de faits de l'article : verify.py controle que
 code, formules et images de l'article en proviennent.
 
 Usage:
-    python gather.py "<expression>" --query "<sous-requete>" [--query ...]
+    python gather.py "<expression>" --query "<facette>::<sous-requete>" [--query ...]
                      [--search-top-k N] [--max-sections N] [--result-cap N]
                      [--relevance-margin F] [--out-dir ...]
 """
@@ -112,7 +117,11 @@ def slugify_expression(text: str) -> str:
         if s.startswith(filler) and len(s) > len(filler) + 3:
             s = s[len(filler):]
             break
-    return s[:60].strip("-") or "contenu"
+    # Slug complet, iso avec l'expression. Garde-fou purement technique (chemins Windows) :
+    # au-dela de 200 car., coupe a une frontiere de mot.
+    if len(s) > 200:
+        s = s[:200].rsplit("-", 1)[0]
+    return s.strip("-") or "contenu"
 
 
 def document_title(document_id: str) -> str:
@@ -148,7 +157,7 @@ def fence_balanced(text: str) -> bool:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("expression", type=str)
-    ap.add_argument("--query", action="append", default=[], help="sous-requete (repetable) ; l'expression elle-meme est toujours interrogee en premier")
+    ap.add_argument("--query", action="append", default=[], help="'<facette>::<sous-requete>' (repetable) ; l'expression elle-meme est toujours interrogee en premier")
     ap.add_argument("--search-top-k", type=int, default=DEFAULT_SEARCH_TOP_K)
     ap.add_argument("--max-sections", type=int, default=DEFAULT_MAX_SECTIONS)
     ap.add_argument("--result-cap", type=int, default=DEFAULT_RESULT_CAP)
@@ -156,11 +165,38 @@ def main() -> int:
     ap.add_argument("--db-path", type=str, default=str(paths.VECTOR_DB_PATH))
     ap.add_argument("--graph-db-path", type=str, default=str(paths.GRAPH_DB_PATH))
     ap.add_argument("--out-dir", type=str, default=None, help="defaut : rag_data/content/<slug>/")
+    ap.add_argument("--voisins", type=str, default=None, help="voisins.json produit par scan_existing.py (defaut : <out-dir>/voisins.json s'il existe)")
     args = ap.parse_args()
 
     slug = slugify_expression(args.expression)
     out_dir = Path(args.out_dir) if args.out_dir else CONTENT_DIR / slug
-    queries = [args.expression] + [q for q in args.query if q.strip() and q.strip() != args.expression]
+    # sous-requetes etiquetees par facette : "facette::requete" (sans "::" = non etiquetee)
+    query_facet: dict[str, str | None] = {args.expression: None}
+    for raw_q in args.query:
+        facet, sep, text = raw_q.partition("::")
+        if not sep:
+            facet, text = None, raw_q
+        text = text.strip()
+        if text and text != args.expression and text not in query_facet:
+            query_facet[text] = facet.strip() if facet and facet.strip() else None
+    queries = list(query_facet)
+    untagged = [q for q in queries[1:] if query_facet[q] is None]
+
+    # --- voisins : chunks deja cites par des contenus proches (lecture seule) --
+    # Absence de voisins.json, ou liste vide : cas normal (page blanche), jamais bloquant.
+    consumed: dict[tuple[str, int], list[str]] = {}
+    neighbor_slugs: list[str] = []
+    voisins_path = Path(args.voisins) if args.voisins else out_dir / "voisins.json"
+    if voisins_path.exists():
+        try:
+            for nb in json.loads(voisins_path.read_text(encoding="utf-8")).get("neighbors", []):
+                neighbor_slugs.append(nb["slug"])
+                for ref in nb.get("cited_chunks", []):
+                    doc_id, _, idx = ref.rpartition("::")
+                    consumed.setdefault((doc_id, int(idx)), []).append(nb["slug"])
+        except (OSError, ValueError, KeyError):
+            print(f"  ATTENTION : {voisins_path} illisible -- dossier constitue sans marquage des voisins.")
+            consumed, neighbor_slugs = {}, []
 
     # --- recuperation multi-requetes, fusion + dedoublonnage ---------------
     merged: dict[tuple[str, int], dict] = {}
@@ -175,7 +211,7 @@ def main() -> int:
             result_cap=args.result_cap,
             relevance_margin=args.relevance_margin,
         )
-        per_query_counts[q] = len(results)
+        per_query_counts[q] = (len(results), sum(1 for r in results if (r.document_id, r.chunk_index) not in consumed))
         for r in results:
             key = (r.document_id, r.chunk_index)
             entry = merged.get(key)
@@ -260,10 +296,12 @@ def main() -> int:
                 "score": None if entry["best"] is None else round(entry["best"], 3),
                 "found_by": sorted(entry["reasons"]),
                 "queries": entry["queries"],
+                "facets": sorted({query_facet[q] for q in entry["queries"] if query_facet.get(q)}),
                 "images": images,
                 "text": text,
                 "distinctive_signals": signals,
                 "distinctive": signals["has_number"] or signals["has_named_entity"],
+                "consumed_by": sorted(set(consumed.get((doc_id, c.chunk_index), []))),
             })
             next_id += 1
 
@@ -286,6 +324,8 @@ def main() -> int:
             "expression": args.expression,
             "slug": slug,
             "queries": queries,
+            "query_facets": query_facet,
+            "neighbors": neighbor_slugs,
             "books": [{"document_id": d, "title": t} for d, t in books],
             "related_concepts": related_concepts,
             "counts": counts,
@@ -300,7 +340,8 @@ def main() -> int:
     lines: list[str] = [
         f"# Dossier -- {args.expression}",
         "",
-        f"- Sous-requetes interrogees : {len(queries)}",
+        f"- Sous-requetes interrogees : {len(queries)} -- facettes : "
+        + (", ".join(sorted({f for f in query_facet.values() if f})) or "(aucune etiquetee)"),
         f"- Chunks uniques : {len(items)} -- texte={counts['texte']}, code={counts['code']}, "
         f"formule={counts['formule']}, image={counts['image']}",
         f"- Livres : {', '.join(t for _, t in books)}",
@@ -310,7 +351,10 @@ def main() -> int:
     lines += ["", "Chaque bloc porte un identifiant [Sxxx] a citer dans l'article "
               "(`<!--src:Sxxx-->`). Le texte entre `[DESCRIPTION DU PIPELINE]` est une description "
               "en langage naturel generee par le pipeline : ce n'est pas du verbatim de livre, "
-              "c'est une aide de lecture -- le bloc de code/formule/image qui la precede fait foi.", ""]
+              "c'est une aide de lecture -- le bloc de code/formule/image qui la precede fait foi.",
+              "Un chunk marque `⚠ DÉJÀ EXPLOITÉ par : <slug>` a deja servi a un contenu voisin : "
+              "son TEXTE (phrases, arguments, exemples) ne se redit pas ici. Les images, formules et "
+              "blocs de code restent librement reutilisables (ils peuvent servir un autre argument).", ""]
 
     current: tuple[str, str] | None = None
     for it in items:
@@ -320,6 +364,10 @@ def main() -> int:
             current = key
         score = "-" if it["score"] is None else f"{it['score']:.3f}"
         marker = " | ★ signal distinctif" if it["distinctive"] else ""
+        if it["facets"]:
+            marker += f" | facette : {', '.join(it['facets'])}"
+        if it["consumed_by"]:
+            marker += f" | ⚠ DÉJÀ EXPLOITÉ par : {', '.join(it['consumed_by'])}"
         lines += ["", f"--- [{it['id']}] {it['type']} | score {score} | {', '.join(it['found_by'])}{marker} ---", it["text"]]
         for img in it["images"]:
             if img["missing"]:
@@ -331,12 +379,42 @@ def main() -> int:
     # --- compte rendu (a relayer tel quel a l'utilisateur) ------------------
     print(f"Dossier constitue : {out_dir}")
     print(f"  Requetes : {len(queries)}")
-    for q, n in per_query_counts.items():
-        print(f"    - {q!r} -> {n} chunk(s)")
+    for q, (n, fresh) in per_query_counts.items():
+        suffix = f", dont {fresh} neuf(s) (non exploites par un voisin)" if neighbor_slugs else ""
+        tag = f"[{query_facet[q]}] " if query_facet.get(q) else ""
+        print(f"    - {tag}{q!r} -> {n} chunk(s){suffix}")
+    facet_names = list(dict.fromkeys(f for f in query_facet.values() if f))
+    if facet_names:
+        print("  Couverture par facette (chunks distincts trouves / dont neufs vs voisins) :")
+        for fn in facet_names:
+            keys = {(it["document_id"], it["chunk_index"]) for it in items if fn in it["facets"]}
+            fresh_keys = {k for k in keys if k not in consumed}
+            flag = "  <-- AUCUN CHUNK : reformule la requete avec le vocabulaire de la facette" if not keys else ""
+            print(f"    - {fn} : {len(keys)} / {len(fresh_keys)}{flag}")
+    if untagged:
+        print(f"  ATTENTION : {len(untagged)} sous-requete(s) sans facette ('<facette>::<requete>') : {untagged} -- "
+              "une requete doit servir une facette du catalogue de l'intention (SKILL.md, etape 1).")
     print(f"  Chunks uniques : {len(items)}  (texte={counts['texte']}, code={counts['code']}, "
           f"formule={counts['formule']}, image={counts['image']})")
     print(f"  Livres : {len(books)}  Sections : {len(ordered_sections)}")
     print(f"  Concepts voisins : {len(related_concepts)}")
+
+    # --- recouvrement avec les contenus voisins (information, jamais bloquant) --
+    if neighbor_slugs:
+        text_items = [it for it in items if it["type"] == "texte"]
+        n_text = len(text_items) or 1
+        print(f"  Voisins pris en compte : {', '.join(neighbor_slugs)}")
+        for nb in neighbor_slugs:
+            shared = sum(1 for it in text_items if nb in it["consumed_by"])
+            print(f"    - {nb} : {shared}/{len(text_items)} chunk(s) de texte du dossier deja exploites ({shared / n_text:.0%})")
+        fresh_text = sum(1 for it in text_items if not it["consumed_by"])
+        print(f"  Chunks de texte neufs : {fresh_text}/{len(text_items)}")
+        if len(text_items) and fresh_text / n_text < 0.4:
+            print("  RECOUVREMENT ELEVE : la plupart des chunks de texte ont deja servi a un voisin -- "
+                  "reprends tes sous-requetes sur des facettes que les voisins ne couvrent pas (voir cadrage), "
+                  "ou accepte un article plus court qui renvoie vers eux. Information, pas un blocage.")
+    else:
+        print("  Aucun voisin : page blanche (rien a eviter), ce n'est pas bloquant.")
 
     # --- diagnostic diversite / matiere distinctive (voir Regles d'or) ------
     print(f"  Livres pertinents (trouves par recherche directe) : {book_coverage}/{len(books)}")

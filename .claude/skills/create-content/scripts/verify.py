@@ -11,6 +11,9 @@ Bloquant (code de sortie 2) :
   - citations : chaque <!--src:Sxxx--> designe un identifiant du dossier ;
   - fuites : aucun marqueur interne du pipeline (rag-nottext, [DESCRIPTION DU
     PIPELINE], "chunk", identifiants [Sxxx] visibles) dans le texte lisible ;
+  - references interdites : aux livres sources (« dans ce livre », « l'auteur »,
+    « chapitre 3 », mots livre/ouvrage/auteur) ou a un autre contenu du site
+    (titre d'un article existant, « dans notre article »...) ;
   - structure : frontmatter (title, description, slug), un seul H1, >= 3 H2 ;
   - voix : aucune marque de vouvoiement (vous/votre/vos) -- le projet impose
     le tutoiement, uniformement.
@@ -26,6 +29,10 @@ Avertissements (n'echouent pas, sauf --strict) :
   - legende d'image sans aucun mot en commun avec la description canonique de
     cette image dans le dossier -- signale un risque de legende racontant un
     autre exemple que celui montre ;
+  - gras de lecture en diagonale : expression > 8 mots, 2 gras a moins de 15
+    mots, > 2 par paragraphe, gras consecutifs sur des puces, section H2 sans
+    gras, puce de « L'essentiel » sans gras, densite hors 60-150 mots/gras,
+    meme expression en gras deux fois ;
   - faible taux de matiere distinctive citee (signal de risque commodity, voir
     gather.py / dossier.json).
 
@@ -43,6 +50,7 @@ _sys.path.insert(0, str(next(p for p in _Path(__file__).resolve().parents if (p 
 import venv_guard  # noqa: F401
 
 import argparse
+import difflib
 import json
 import re
 import sys
@@ -55,6 +63,9 @@ for _stream in (sys.stdout, sys.stderr):
 _PROJECT_ROOT = Path(__file__).resolve().parents[4]
 CONTENT_DIR = _PROJECT_ROOT / "rag_data" / "content"
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import toc as toc_mod  # noqa: E402  (sommaire cliquable : meme code que toc.py)
+
 EXEMPT_LANGS = {"output", "console", "text", "txt", "result", "resultat", "sortie"}
 _FENCE_BLOCK_RE = re.compile(r"^```([^\n`]*)\n(.*?)^```[ \t]*$", re.MULTILINE | re.DOTALL)
 _IMAGE_RE = re.compile(r"!\[([^\]]*)\]\(([^)\s]+)[^)]*\)")
@@ -62,6 +73,28 @@ _SRC_RE = re.compile(r"<!--\s*src:\s*([^>]*?)\s*-->")
 _DISPLAY_FORMULA_RE = re.compile(r"\$\$(.+?)\$\$", re.DOTALL)
 _LEAK_RE = re.compile(r"rag-nottext|DESCRIPTION DU PIPELINE|TRANSCRIPTION OCR|\bchunks?\b|\[S\d{3}\]", re.IGNORECASE)
 _ELISION_RE = re.compile(r"^\s*(#|//)?\s*(\.\.\.|…)\s*$")
+
+# --- references interdites : aux livres sources, aux autres articles ---------
+# L'article doit se tenir seul : jamais « dans ce livre », « l'auteur explique »,
+# ni « dans notre article sur... » / titre d'un autre contenu. Les liens vers
+# d'autres contenus se decident a la publication (champ `related`), pas ici.
+_APO = r"['’]"
+_BOOK_REF_STRONG_RE = re.compile(
+    r"\b(?:ce|cet|cette|ces|le|la|les|un|une|l|notre|nos|d|du|des|au|aux)(?:" + _APO + r"|\s+)"
+    r"(?:premier\s+|second\s+|dernier\s+|autre\s+|autres\s+)?"
+    r"(?:livres?|ouvrages?|manuels?|chapitres?|auteurs?|autrices?)\b",
+    re.IGNORECASE,
+)
+_BOOK_LOCATOR_RE = re.compile(r"\b(?:chapitre|page|section|figure|listing|tableau)\s+\d+(?:[.,]\d+)*\b", re.IGNORECASE)
+_BOOK_WORD_RE = re.compile(r"\b(?:livres?|ouvrages?|manuels?|auteurs?|autrices?|chapitres?)\b", re.IGNORECASE)
+_ARTICLE_REF_RES = [
+    re.compile(r"\b(?:notre|nos)\s+(?:autres?\s+)?(?:articles?|billets?|tutoriels?|guides?)\b", re.IGNORECASE),
+    re.compile(r"\bdans\s+l" + _APO + r"article\b", re.IGNORECASE),
+    re.compile(r"\bl" + _APO + r"article\s+(?:cité|précédent|voisin|complémentaire|dédié|plus haut|ci-dessus|sur\b|«|\")", re.IGNORECASE),
+    re.compile(r"\b(?:un\s+)?(?:autre|précédent|prochain|dernier)\s+article\b", re.IGNORECASE),
+    re.compile(r"\barticles?\s+(?:cité|cités|précédent|précédents|voisin|voisins|complémentaire|complémentaires)\b", re.IGNORECASE),
+    re.compile(r"\b(?:voir|lis|lire|consulte|consulter|renvoie|renvoi)\b[^.\n]{0,40}\barticles?\b", re.IGNORECASE),
+]
 _VOUVOIEMENT_RE = re.compile(r"\b(vous|votre|vos)\b", re.IGNORECASE)
 
 # --- detection heuristique de variables non definies (pas un vrai parseur
@@ -292,6 +325,352 @@ def check_caption_consistency(body_no_code: str, items: list[dict]) -> list[str]
     return found
 
 
+# --- duplication de texte avec les autres contenus (AVERTISSEMENTS seulement) ---
+# Jamais bloquant : le redacteur a recu les voisins a eviter ; ce controle sert a
+# lui montrer ce qui a quand meme fuite. Hors perimetre (peuvent servir un autre
+# argument) : images, formules, blocs de code, commentaires, sommaire.
+_SHINGLE = 10                 # mots consecutifs identiques = passage commun
+_SENT_MIN_WORDS = 8
+_SENT_SIM = 0.80
+_MAX_REPORTED = 6
+_TOKEN_RE = re.compile(r"\w+", re.UNICODE)
+_SENT_SPLIT_RE = re.compile(r"(?<=[.!?…])\s+|\n+")
+_MD_NOISE_RE = re.compile(r"^[\s>\-*|]+|[*_`|]")
+
+
+def prose_of(text: str) -> str:
+    _, body = split_frontmatter(text)
+    body = _FENCE_BLOCK_RE.sub("", body)
+    body = _DISPLAY_FORMULA_RE.sub("", body)
+    body = re.sub(r"<!--.*?-->", "", body, flags=re.DOTALL)
+    body = _IMAGE_RE.sub("", body)
+    return toc_mod._TOC_RE.sub("", body)
+
+
+def prose_tokens(prose: str) -> list[str]:
+    return [t.lower() for t in _TOKEN_RE.findall(prose)]
+
+
+def prose_sentences(prose: str) -> list[list[str]]:
+    out = []
+    for raw in _SENT_SPLIT_RE.split(prose):
+        toks = prose_tokens(_MD_NOISE_RE.sub("", raw))
+        if len(toks) >= _SENT_MIN_WORDS:
+            out.append(toks)
+    return out
+
+
+def shared_runs(a: list[str], b: list[str], n: int = _SHINGLE) -> list[tuple[int, int]]:
+    """Passages de `a` (debut, fin en mots) qui apparaissent aussi dans `b`,
+    sur au moins `n` mots consecutifs ; les chevauchements sont fusionnes."""
+    if len(a) < n or len(b) < n:
+        return []
+    grams_b = {tuple(b[i:i + n]) for i in range(len(b) - n + 1)}
+    runs: list[list[int]] = []
+    for i in range(len(a) - n + 1):
+        if tuple(a[i:i + n]) in grams_b:
+            if runs and i <= runs[-1][1]:
+                runs[-1][1] = i + n
+            else:
+                runs.append([i, i + n])
+    return [(s, e) for s, e in runs]
+
+
+def declared_neighbors(content_dir: Path) -> set[str]:
+    try:
+        data = json.loads((content_dir / "voisins.json").read_text(encoding="utf-8"))
+        return {n["slug"] for n in data.get("neighbors", [])}
+    except (OSError, ValueError, KeyError):
+        return set()
+
+
+def check_duplication(content_dir: Path, article_text: str) -> list[str]:
+    neighbors = declared_neighbors(content_dir)
+    own_prose = prose_of(article_text)
+    own_tokens = prose_tokens(own_prose)
+    own_sents = prose_sentences(own_prose)
+    own_h2 = {toc_mod.norm_title(t): t for t in toc_mod.h2_titles(split_frontmatter(article_text)[1])
+              if not toc_mod.is_essentiel(t)}
+    warnings: list[str] = []
+    for other_dir in sorted(p for p in CONTENT_DIR.iterdir() if p.is_dir()):
+        if other_dir.resolve() == content_dir.resolve() or not (other_dir / "article.md").exists():
+            continue
+        try:
+            other_text = (other_dir / "article.md").read_text(encoding="utf-8")
+        except OSError:
+            continue
+        other_prose = prose_of(other_text)
+        other_tokens = prose_tokens(other_prose)
+        found: list[str] = []
+
+        runs = shared_runs(own_tokens, other_tokens)
+        if runs:
+            covered = sum(e - s for s, e in runs)
+            share = covered / max(1, len(own_tokens))
+            longest = sorted(runs, key=lambda r: r[0] - r[1])[:_MAX_REPORTED]
+            samples = " | ".join("« " + " ".join(own_tokens[s:min(e, s + 14)]) + (" ..." if e - s > 14 else "") + " »"
+                                  for s, e in longest)
+            found.append(f"{len(runs)} passage(s) de >= {_SHINGLE} mots identiques ({share:.0%} de l'article) : {samples}")
+
+        other_sents = prose_sentences(other_prose)
+        other_sets = [(toks, set(toks)) for toks in other_sents]
+        near = []
+        for toks in own_sents:
+            sa = set(toks)
+            best, best_ratio = None, 0.0
+            for otoks, sb in other_sets:
+                if len(sa & sb) / len(sa | sb) < 0.5:
+                    continue
+                ratio = difflib.SequenceMatcher(None, toks, otoks).ratio()
+                if ratio > best_ratio:
+                    best, best_ratio = otoks, ratio
+            if best is not None and best_ratio >= _SENT_SIM:
+                near.append((best_ratio, toks))
+        if near:
+            near.sort(key=lambda x: -x[0])
+            samples = " | ".join(f"{r:.0%} « " + " ".join(t[:16]) + (" ..." if len(t) > 16 else "") + " »"
+                                  for r, t in near[:_MAX_REPORTED])
+            found.append(f"{len(near)} phrase(s) quasi identique(s) : {samples}")
+
+        other_h2 = {toc_mod.norm_title(t): t for t in toc_mod.h2_titles(split_frontmatter(other_text)[1])
+                    if not toc_mod.is_essentiel(t)}
+        common_h2 = [own_h2[k] for k in own_h2 if k in other_h2]
+        # Des titres generiques (« Pieges et limites »...) reviennent partout : on ne
+        # les signale que pour un voisin declare ou un contenu deja en doublon de texte.
+        if common_h2 and (other_dir.name in neighbors or found):
+            found.append(f"titre(s) H2 identique(s), plan a differencier : {', '.join(repr(t) for t in common_h2)}")
+
+        if found:
+            warnings.append(f"DUPLICATION avec '{other_dir.name}' -- " + " ;; ".join(found))
+    return warnings
+
+
+# --- facettes du catalogue de l'intention (AVERTISSEMENTS seulement) -----------
+# Miroir de la table de SKILL.md (etape 2). Chaque facette : (libelle, motif
+# insensible a la casse/accents qui la reconnait dans plan.md ou dans une
+# etiquette `--query "<facette>::..."`).
+FACET_CATALOG: dict[str, list[tuple[str, str]]] = {
+    "definition": [("nature / ce que c'est", r"nature|ce que c.est"), ("a quoi ca sert", r"sert|utilit"),
+                   ("composants et fonctionnement", r"composant|fonctionnement"),
+                   ("place dans son ecosysteme", r"ecosysteme|place"), ("exemple concret", r"exemple"),
+                   ("idees recues", r"idees? recue")],
+    "decision": [("criteres de decision", r"critere"), ("signaux et seuils chiffres", r"signaux?|seuil"),
+                 ("contre-indications", r"contre"), ("alternatives", r"alternative"),
+                 ("cout / benefice", r"cout|benefice"), ("cas limites", r"cas limite")],
+    "procedure": [("prerequis", r"prerequis"), ("etapes dans l'ordre", r"etape"),
+                  ("commande ou code", r"commande|code"), ("parametres cles", r"parametre"),
+                  ("verifier le resultat", r"verifier"), ("erreurs frequentes", r"erreur")],
+    "comparaison": [("axes de comparaison", r"axe"), ("forces et faiblesses", r"force|faiblesse"),
+                    ("cas d'usage de chacune", r"cas d.usage"), ("critere de choix", r"critere")],
+    "causalite": [("mecanisme", r"mecanisme"), ("cause racine", r"cause"), ("preuves et chiffres", r"preuve|chiffre"),
+                  ("consequences", r"consequence"), ("exceptions", r"exception")],
+    "optimisation": [("symptome et mesure", r"symptome|mesure"), ("cause probable", r"cause"),
+                     ("levier d'action", r"levier"), ("effet attendu", r"effet attendu"),
+                     ("effets de bord", r"effets? de bord")],
+    "panorama": [("critere de classement", r"classement|critere"), ("chaque element", r"element"),
+                 ("comment choisir", r"choisir")],
+}
+_INTENT_RE = re.compile(r"(definition|decision|procedure|comparaison|causalite|optimisation|diagnostic|panorama)")
+_RETIRED_RE = re.compile(r"renvoi|hors perimetre|ecarte|deja couvert|couverte? par")
+
+
+def _fold(s: str) -> str:
+    import unicodedata
+    s = unicodedata.normalize("NFKD", s.lower())
+    return "".join(c for c in s if not unicodedata.combining(c))
+
+
+def check_facets(content_dir: Path, dossier: dict) -> list[str]:
+    """plan.md doit contenir une ligne par facette du catalogue de l'intention
+    retenue (sous-requete etiquetee, ou retrait justifie : renvoi / hors
+    perimetre). Avertissements seulement."""
+    plan_path = content_dir / "plan.md"
+    if not plan_path.exists():
+        return ["plan.md absent : cadrage, voisins, tableau des facettes et plan doivent y etre consignes (SKILL.md, etapes 0-3)"]
+    plan = _fold(plan_path.read_text(encoding="utf-8"))
+    out: list[str] = []
+    m = re.search(r"intention[^\n]*", plan)
+    intent_m = _INTENT_RE.search(m.group(0)) if m else None
+    if not intent_m:
+        return ["plan.md : intention non identifiee (famille attendue dans la section Cadrage : definition, decision, procedure, comparaison, causalite, optimisation/diagnostic, panorama)"]
+    key = intent_m.group(1)
+    key = {"diagnostic": "optimisation"}.get(key, key)
+    fs = re.search(r"##\s*facettes(.*?)(?=\n##\s|\Z)", plan, re.S)
+    facet_section = fs.group(1) if fs else ""
+    if not facet_section.strip():
+        out.append("plan.md : section « Facettes » absente ou vide (tableau facette -> voisin -> difference attendu)")
+    tagged = _fold(" ".join(f for f in (dossier.get("query_facets") or {}).values() if f))
+    untagged = [q for q, f in (dossier.get("query_facets") or {}).items() if not f and q != dossier.get("expression")]
+    if untagged:
+        out.append(f"{len(untagged)} sous-requete(s) sans facette etiquetee dans gather.py : {untagged}")
+    for label, pat in FACET_CATALOG[key]:
+        rows = [ln for ln in facet_section.splitlines() if re.search(pat, ln)]
+        if not rows:
+            out.append(f"facette du catalogue « {label} » ({key}) absente du tableau de plan.md -- la traiter, ou la retirer avec une raison ecrite")
+        elif not re.search(pat, tagged) and not any(_RETIRED_RE.search(r) for r in rows):
+            out.append(f"facette « {label} » : aucune sous-requete etiquetee ni retrait justifie (renvoi / hors perimetre) dans plan.md")
+    return out
+
+
+# --- gras de lecture en diagonale (AVERTISSEMENTS seulement) --------------------
+# Le gras sert au lecteur qui survole : il doit retrouver le fil de l'argument
+# en ne lisant que les passages en gras. Seuils (voir SKILL.md, passe de gras) :
+BOLD_MAX_WORDS = 8            # longueur maximale d'une expression en gras
+BOLD_MIN_GAP_WORDS = 15       # mots minimum entre deux gras d'un meme paragraphe
+BOLD_MAX_PER_PARAGRAPH = 2    # maximum par paragraphe de prose (1 par puce)
+BOLD_WORDS_PER_BOLD = (60, 150)  # densite tolerée : mots de prose pour 1 gras (cible 80-120)
+_BOLD_RE = re.compile(r"\*\*(?!\s)(.+?)(?<!\s)\*\*")
+_CALLOUT_LABEL_RE = re.compile(r"^\s*>\s*\*\*[\U0001F300-\U0001FAFF☀-➿️]+[^*]*\*\*")
+_LIST_ITEM_RE = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+")
+
+
+def _bold_blocks(body: str) -> list[dict]:
+    """Decoupe le texte lisible en blocs (paragraphes de prose ou puces) avec
+    leur H2. Ecarte code, titres, images, formules, tableaux, sommaire et
+    etiquettes d'encadre (> **💡 Intuition**)."""
+    text = _SRC_RE.sub("", body)
+    text = re.sub(r"<!--.*?-->", "", text, flags=re.DOTALL)
+    text = _FENCE_BLOCK_RE.sub("", text)
+    blocks: list[dict] = []
+    h2 = ""
+    for para in re.split(r"\n\s*\n", text):
+        lines = [ln for ln in para.splitlines() if ln.strip()]
+        if not lines:
+            continue
+        first = lines[0].lstrip()
+        if first.startswith("## "):
+            h2 = first[3:].strip()
+            lines = lines[1:]
+            if not lines:
+                continue
+            first = lines[0].lstrip()
+        if first.startswith(("#", "![", "$$", "|", "**Sommaire**")):
+            continue
+        if all(ln.lstrip().startswith("- [") for ln in lines):
+            continue  # sommaire cliquable
+        if all(_LIST_ITEM_RE.match(ln) or ln.startswith((" ", "\t")) for ln in lines):
+            items: list[str] = []
+            for ln in lines:
+                if _LIST_ITEM_RE.match(ln) or not items:
+                    items.append(_LIST_ITEM_RE.sub("", ln, count=1))
+                else:
+                    items[-1] += " " + ln.strip()
+            for it in items:
+                blocks.append({"h2": h2, "kind": "item", "text": it.strip()})
+            blocks[-1]["last_of_list"] = True
+            continue
+        cleaned = " ".join(_CALLOUT_LABEL_RE.sub(">", ln).lstrip("> ").strip() for ln in lines)
+        blocks.append({"h2": h2, "kind": "para", "text": cleaned})
+    return blocks
+
+
+def check_bold(body: str) -> list[str]:
+    warns: list[str] = []
+    blocks = _bold_blocks(body)
+    ess = toc_mod.ESSENTIEL_TITLE
+    seen: dict[str, int] = {}
+    per_h2: dict[str, int] = {}
+    prose_words = 0
+    total_bold = 0
+    prev_item_had_bold = False
+    for b in blocks:
+        t, h2 = b["text"], b["h2"]
+        spans = [(m.start(), m.end(), m.group(1)) for m in _BOLD_RE.finditer(t)]
+        words = len(re.findall(r"\w+", _BOLD_RE.sub("", t))) + sum(len(re.findall(r"\w+", s[2])) for s in spans)
+        prose_words += words
+        total_bold += len(spans)
+        per_h2.setdefault(h2, 0)
+        per_h2[h2] += len(spans)
+        in_ess = h2.strip().lower() == ess.strip().lower()
+        shown = norm_ws(t)[:50]
+        for _, _, s in spans:
+            n = len(re.findall(r"\w+", s))
+            if n > BOLD_MAX_WORDS:
+                warns.append(f"gras trop long ({n} mots, max {BOLD_MAX_WORDS}) : **{s[:60]}**")
+            key = s.strip().lower()
+            seen[key] = seen.get(key, 0) + 1
+        if spans and words >= 6 and len(re.findall(r"\w+", _BOLD_RE.sub("", t))) <= 3:
+            warns.append(f"paragraphe presque entierement en gras : {shown}...")
+        if b["kind"] == "para":
+            if len(spans) > BOLD_MAX_PER_PARAGRAPH:
+                warns.append(f"{len(spans)} gras dans un meme paragraphe (max {BOLD_MAX_PER_PARAGRAPH}) : {shown}...")
+            for (s0, e0, _), (s1, _, _) in zip(spans, spans[1:]):
+                gap = len(re.findall(r"\w+", t[e0:s1]))
+                if gap < BOLD_MIN_GAP_WORDS:
+                    warns.append(f"deux gras a {gap} mots d'ecart (min {BOLD_MIN_GAP_WORDS}) : {shown}...")
+            prev_item_had_bold = False
+        else:
+            if len(spans) > 1:
+                warns.append(f"{len(spans)} gras dans une meme puce (max 1) : {shown}...")
+            if in_ess and not spans:
+                warns.append(f"puce de « {ess} » sans expression-cle en gras : {shown}...")
+            if not in_ess and spans and prev_item_had_bold:
+                warns.append(f"gras sur deux puces consecutives : {shown}...")
+            prev_item_had_bold = bool(spans)
+            if b.get("last_of_list"):
+                prev_item_had_bold = False
+    for k, n in seen.items():
+        if n > 1:
+            warns.append(f"meme expression en gras {n} fois : **{k[:50]}** (une seule fois, a sa premiere apparition utile)")
+    for h2, n in per_h2.items():
+        if h2 and n == 0:
+            warns.append(f"section « {h2} » sans aucun gras")
+    if prose_words:
+        if total_bold == 0:
+            warns.append("aucun gras dans l'article (lecture en diagonale impossible)")
+        else:
+            wpb = prose_words / total_bold
+            lo, hi = BOLD_WORDS_PER_BOLD
+            if wpb > hi:
+                warns.append(f"gras trop rares : 1 pour {wpb:.0f} mots (cible 80-120, tolere {lo}-{hi})")
+            elif wpb < lo:
+                warns.append(f"gras trop nombreux : 1 pour {wpb:.0f} mots (cible 80-120, tolere {lo}-{hi})")
+    return warns
+
+
+def check_references(content_dir: Path, text: str) -> list[str]:
+    """Erreurs (bloquantes) : reference a un livre source (« dans ce livre »,
+    « l'auteur », « chapitre 3 »...) ou a un autre contenu du site (titre d'un
+    article existant, « dans notre article »...). Les mots isoles livre /
+    ouvrage / auteur ne sont signales que s'ils restent apres les motifs forts."""
+    errs: list[str] = []
+    seen: set[str] = set()
+
+    def add(label: str, m: re.Match) -> None:
+        frag = norm_ws(text[max(0, m.start() - 25): m.end() + 25])
+        key = f"{label}:{m.group(0).lower()}"
+        if key not in seen:
+            seen.add(key)
+            errs.append(f"{label} : {m.group(0)!r} (...{frag}...) -- reformule sans citer d'ouvrage ni d'auteur")
+
+    strong_spans: list[tuple[int, int]] = []
+    for m in _BOOK_REF_STRONG_RE.finditer(text):
+        strong_spans.append(m.span())
+        add("reference a un livre source", m)
+    for m in _BOOK_LOCATOR_RE.finditer(text):
+        add("localisation dans un livre source", m)
+    for m in _BOOK_WORD_RE.finditer(text):
+        if not any(a <= m.start() < b for a, b in strong_spans):
+            add("mot renvoyant aux livres sources", m)
+
+    for rx in _ARTICLE_REF_RES:
+        for m in rx.finditer(text):
+            add("reference a un autre article", m)
+
+    folded_text = _fold(text)
+    if CONTENT_DIR.is_dir():
+        for other in sorted(CONTENT_DIR.iterdir()):
+            other_article = other / "article.md"
+            if not other.is_dir() or other.resolve() == content_dir.resolve() or not other_article.exists():
+                continue
+            title = split_frontmatter(other_article.read_text(encoding="utf-8"))[0].get("title", "").strip()
+            ft = _fold(title)
+            if len(ft) >= 15 and ft in folded_text:
+                errs.append(f"reference a un autre contenu : le titre « {title} » ({other.name}) apparait dans l'article "
+                            "-- les liens vers d'autres contenus se decident a la publication (champ `related`), pas dans le texte")
+    return errs
+
+
 def norm_ws(s: str) -> str:
     return re.sub(r"\s+", " ", s).strip()
 
@@ -366,11 +745,35 @@ def main() -> int:
     if len(h2) < 3:
         errors.append(f"{len(h2)} section(s) H2 (au moins 3 attendues)")
 
+    # --- blocs fixes : « L'essentiel en 30 secondes » + Sommaire cliquable juste avant ---
+    h2_list = toc_mod.h2_titles(body)
+    ess_match = next((m for m in toc_mod._H2_RE.finditer(body) if toc_mod.is_essentiel(toc_mod.plain_title(m.group(1)))), None)
+    if ess_match is None:
+        errors.append(f"H2 obligatoire absent : '## {toc_mod.ESSENTIEL_TITLE}'")
+    else:
+        toc_entries = toc_mod.parse_toc(body)
+        if toc_entries is None:
+            errors.append("sommaire cliquable absent (a placer juste avant « L'essentiel en 30 secondes ») -- "
+                          "lance toc.py <slug> qui l'ecrit tout seul")
+        else:
+            expected = list(zip(h2_list, toc_mod.unique_ids(h2_list)))
+            if [(norm, a) for norm, a in toc_entries] != expected:
+                errors.append("sommaire cliquable different des H2 de l'article (titre ou ancre) -- relance toc.py <slug>")
+            toc_end = toc_mod._TOC_RE.search(body).end()
+            if body[toc_end:ess_match.start()].strip():
+                errors.append("le sommaire doit etre JUSTE avant « L'essentiel en 30 secondes » (rien entre les deux)")
+            if toc_mod._TOC_RE.search(body).start() > ess_match.start():
+                errors.append("le sommaire est place apres « L'essentiel en 30 secondes » : il doit le preceder")
+
     # --- fuites internes dans le texte lisible (hors commentaires src) -------
     readable = _SRC_RE.sub("", body)
     readable = re.sub(r"<!--.*?-->", "", readable, flags=re.DOTALL)
     for m in _LEAK_RE.finditer(_FENCE_BLOCK_RE.sub("", readable)):
         errors.append(f"fuite interne dans le texte : {m.group(0)!r}")
+
+    # --- references interdites : livres sources, autres articles -------------
+    scan_text = _FENCE_BLOCK_RE.sub("", readable) + "\n" + fm.get("title", "") + "\n" + fm.get("description", "")
+    errors.extend(check_references(content_dir, scan_text))
 
     # --- voix : tutoiement impose, aucun vouvoiement ------------------------
     vouv_hits = _VOUVOIEMENT_RE.findall(_FENCE_BLOCK_RE.sub("", readable))
@@ -469,6 +872,9 @@ def main() -> int:
             warnings.append(f"paragraphe de {n} mots sans citation <!--src:--> (remplissage possible) : "
                              f"{norm_ws(stripped)[:60]}...")
 
+    # --- gras de lecture en diagonale (avertissements) ----------------------
+    warnings.extend(check_bold(body))
+
     # --- variables de code non definies (elision qui aurait coupe une ligne) -
     warnings.extend(check_undefined_names(body))
 
@@ -483,6 +889,15 @@ def main() -> int:
         warnings.append(f"faible taux de matiere distinctive citee ({distinctive_rate:.0%}) -- "
                          "risque de contenu commodity, voir le rapport final au lecteur")
 
+    # --- duplication de texte avec les autres contenus (jamais bloquant) -----
+    dup_warnings: list[str] = []
+    if CONTENT_DIR.is_dir():
+        dup_warnings = check_duplication(content_dir, raw)
+    warnings.extend(dup_warnings)
+
+    # --- facettes du catalogue de l'intention (plan.md) ---------------------
+    warnings.extend(check_facets(content_dir, dossier))
+
     # --- compte rendu --------------------------------------------------------
     print(f"Verification de {article_path}")
     print(f"  Mots : {words}  (~{max(1, round(words / 200))} min de lecture)")
@@ -493,6 +908,9 @@ def main() -> int:
         print(f"  Matiere distinctive citee : {len(distinctive_cited)}/{len(cited)} "
               f"({distinctive_rate:.0%}) -- signal de non-commodity")
     print(f"  Livres pertinents (dossier) : {dossier.get('book_coverage', '?')}")
+    print(f"  Duplication avec les autres contenus : "
+          + (f"{len(dup_warnings)} contenu(s) concerne(s) (avertissements ci-dessous, non bloquants)" if dup_warnings
+             else "aucune (ou aucun autre contenu a comparer)"))
     for e in errors:
         print(f"  ERREUR : {e}")
     for w in warnings:
