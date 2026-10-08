@@ -46,28 +46,63 @@ l'emplacement sous `rag_data/work/`, calculé automatiquement par
 le même chemin de PDF (ou le `document_id` qu'un script a affiché) à l'étape
 suivante.
 
-## Interpréteur Python (obligatoire)
+## Interpréteur Python
 
-**Tout script du pipeline se lance UNIQUEMENT avec
-`"<racine_projet>/.venv-rag/Scripts/python.exe"`, jamais avec `python`/`py`.**
+Tout script de ce skill se lance **uniquement** avec
+`"<racine_projet>/.venv-rag/Scripts/python.exe"`, jamais avec `python`/`py`
+(Python système). Techniquement imposé par un hook `PreToolUse` sur `Bash` et
+`PowerShell` (`.claude/hooks/block_system_python.py`, voir
+`.claude/settings.json`), qui refuse toute commande lançant un script de
+`.claude/skills/*/scripts/` ou `tools/` avec `python`/`py`. `<racine_projet>` = le dossier contenant
+`.claude/`.
+
+**Pourquoi.** Les scripts dépendent de paquets installés uniquement dans
+`.venv-rag` (pytesseract, chromadb, kuzu...). Avec le Python système, ils
+échouent en `ModuleNotFoundError` ou, pire, tournent dans un mauvais
+environnement. Le garde-fou `_rag_lib/venv_guard.py` relance automatiquement le
+script dans le venv quand il est appelé autrement, mais le hook refuse la
+commande avant, avec la commande correcte.
+
 Avant de lancer une étape, charge son SKILL.md et reprends sa commande exacte
 (script `run.py` ou `*_lot.py` selon l'étape) ; ne la devine jamais.
 
-## Règle d'exécution (aucune tâche en arrière-plan)
+## Exécution
 
-**Chaque commande (`python .../scripts/run.py ...`) s'exécute en foreground,
-de façon strictement bloquante, jusqu'à complétion — jamais via
-`run_in_background`, `Popen` détaché, ou tout autre mécanisme asynchrone.**
+Toujours en foreground, bloquant jusqu'à complétion — jamais via
+`run_in_background` ni aucun mécanisme async, et jamais deux commandes du
+pipeline en parallèle. Techniquement imposé par un hook `PreToolUse` sur `Bash`
+(`.claude/hooks/block_rag_background.py`, voir `.claude/settings.json`), qui
+refuse tout `run_in_background: true` sur une commande référençant un script
+d'un skill du projet. Voir `/ragpipeline`, section « Pourquoi le foreground ».
+
+**Interdiction de déléguer à un sous-agent** (outil `Agent`) la lecture ou la
+vérification des sorties de ce skill : elle se fait directement, dans le même
+tour de conversation, jamais « pour économiser du contexte ».
+
 Le script lui-même est synchrone (y compris ses appels internes `claude -p`,
 via `subprocess.run(..., timeout=...)`) ; c'est à l'appelant (toi) de ne pas
-briser cette garantie en le lançant en arrière-plan. Lancer deux commandes du
-pipeline en parallèle, ou l'une en arrière-plan pendant qu'une autre tourne,
-risque une contention sur les appels `claude -p` imbriqués (verrou de
-session/auth) qui peut faire timeout un appel pourtant fonctionnel isolément.
-Même règle que `/cours-condense` : pas de `ScheduleWakeup`, pas d'agent
-async, pour aucune étape du pipeline.
+briser cette garantie (pas de `Popen` détaché). Même règle que
+`/cours-condense` : pas de `ScheduleWakeup`, pas d'agent async, pour aucune
+étape du pipeline.
 
 **Une étape à la fois, dans l'ordre, sans sauter d'étape.**
+
+## Pourquoi le foreground
+
+Deux motifs, selon le skill (le hook, lui, s'applique à tous) :
+
+- **Contention de `claude -p`** (`/cours-condense`, `/rag-nottext`,
+  `/rag-concepts`, `/rag-graphe`, et l'étape d'audit de `/rag-integrity`) : le
+  script fait des appels `claude -p` imbriqués, qui entrent en contention avec
+  la session appelante et expirent à 120 s s'ils tournent en arrière-plan ou
+  en parallèle d'une autre étape.
+- **Écriture concurrente** (`/rag-extraction`, `/rag-chunking`, `/rag-index`,
+  `/create-content`, `/publish-content`) : deux exécutions simultanées écrivent
+  sur les mêmes fichiers ou bases (`pivot.md`, `status.json`, `chunks.json` d'un
+  document ; base Chroma partagée ; bases RAG de `/create-content` ;
+  publication WordPress) et risquent de les corrompre ou de dupliquer le
+  résultat. `/rag-extraction` n'a plus d'appel `claude -p`, mais garde la règle
+  pour cette raison.
 
 ## Aucune pause de validation
 
