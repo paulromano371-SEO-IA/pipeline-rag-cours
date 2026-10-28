@@ -54,6 +54,22 @@ _FENCE_RE = re.compile(r"```\n(.*?)\n```", re.DOTALL)
 _IMAGE_REF_RE = re.compile(r"!\[[^\]]*\]\(([^)]+)\)")
 _MD_HEADING_RE = re.compile(r"^#+\s+(.*)$", re.MULTILINE)
 _COMMAND_RE = re.compile(r"\\[a-zA-Z]+\*?")
+# Mise en forme LaTeX (\textit{x}, \emph{x}...) : le PDF ne rend que le contenu,
+# sans la balise. Retiree avant _COMMAND_RE, sinon "\textit{x}" devient " x "
+# (espaces ajoutes) et le titre est signale absent a tort.
+_FORMAT_COMMAND_RE = re.compile(r"\\(?:textit|textbf|emph|texttt|textrm|textsc|textsf|mathrm)\{([^{}]*)\}")
+# Caracteres echappes (\_ \% \& \#) : rendus par le seul caractere dans le PDF.
+_ESCAPED_CHAR_RE = re.compile(r"\\([_%&#])")
+# Lettres grecques : pdflatex les rend en caractere Unicode (ex. λ), alors que
+# course.tex porte la commande LaTeX — sans ce remplacement, \lambda etait
+# simplement supprime (titre "le rôle de λ..." signale absent a tort).
+_GREEK_LETTERS = {
+    "\\lambda": "λ", "\\alpha": "α", "\\beta": "β", "\\gamma": "γ",
+    "\\delta": "δ", "\\theta": "θ", "\\mu": "μ", "\\sigma": "σ", "\\pi": "π",
+    "\\phi": "ϕ",
+}
+# Symboles mathematiques courants en titre (ex. "\to" rendu "→" dans le PDF).
+_MATH_SYMBOLS = {"\\to": "→"}
 _FIGURE_ENV_RE = re.compile(r"\\begin\{figure\}.*?\\end\{figure\}", re.DOTALL)
 
 # Similarite minimale (difflib) pour considerer un bloc de code retrouve a
@@ -237,7 +253,20 @@ def check_code_blocks(course_tex_path: Path, pivot_text: str) -> tuple[list[Fide
     # document (verifie empiriquement). La recherche globale n'a pas ce
     # mode d'echec : chaque bloc trouve sa vraie correspondance ou aucune,
     # independamment de l'etat des blocs voisins.
+    # Passe 1 : correspondances exactes d'abord. Sans cela, un bloc voisin
+    # sans clôture (ex. sortie de console) pouvait voler la clôture exacte
+    # d'un bloc traité plus tard dans l'ordre, qui se retrouvait à tort absent.
+    exacts = set()
     for idx, expected in enumerate(expected_blocks):
+        for k, found in enumerate(found_blocks):
+            if not used[k] and found == expected:
+                used[k] = True
+                exacts.add(idx)
+                break
+    for idx, expected in enumerate(expected_blocks):
+        if idx in exacts:
+            verified += 1
+            continue
         best_score, best_k = -1.0, None
         for k, found in enumerate(found_blocks):
             if used[k]:
@@ -307,6 +336,20 @@ def _normalize_heading(text: str) -> str:
     empiriquement — un livre entier retombait à ~15% de couverture de
     titres alors qu'ils étaient tous réellement présents)."""
     text = _SECTION_NUMBER_PREFIX_RE.sub("", text.strip())
+    # \texorpdfstring{rendu PDF}{texte des signets} : seul le premier argument
+    # est rendu dans le PDF (ex. "$\pi$" -> π, et non "π pi").
+    text = re.sub(r"\\texorpdfstring\{([^{}]*)\}\{[^{}]*\}", r"\1", text)
+    # Délimiteurs de mode mathématique inline \( ... \) : rendus sans symbole.
+    text = text.replace("\\(", "").replace("\\)", "")
+    # \mathbb{R} : rendu PDF "R" (ensembles de nombres, ex. "\mathbb{R}^n" -> "Rn").
+    text = re.sub(r"\\mathbb\{([^{}]*)\}", r"\1", text)
+    # \times : rendu PDF "×" (ex. "$2 \times 2$" -> "2 × 2").
+    text = text.replace("\\times", "×")
+    for latex, char in {**_GREEK_LETTERS, **_MATH_SYMBOLS}.items():
+        # Frontiere de mot : "\phi" ne doit pas capturer le debut de "\phiX".
+        text = re.sub(re.escape(latex) + r"(?![a-zA-Z])", char, text)
+    text = _FORMAT_COMMAND_RE.sub(r"\1", text)
+    text = _ESCAPED_CHAR_RE.sub(r"\1", text)
     text = _COMMAND_RE.sub(" ", text)
     text = text.replace("{", " ").replace("}", " ")
     # "~" est l'espace insecable de LaTeX (typographie francaise avant
@@ -314,15 +357,21 @@ def _normalize_heading(text: str) -> str:
     # fois rendu dans le PDF — sans ce retrait, tout titre l'utilisant
     # (frequent en francais) se faisait a tort signaler absent.
     text = text.replace("~", " ")
-    # "\og"/"\fg{}" (guillemets francais, babel-french) : deja retires par
-    # _COMMAND_RE (commandes) et le remplacement des accolades ci-dessus, le
-    # texte source ne porte donc plus aucune marque de guillemet a ce stade.
-    # Le rendu PDF, lui, porte les vrais caracteres « / » (extraits tels
-    # quels depuis pivot.md) — sans ce retrait cote pivot.md aussi, plus
-    # aucun titre a guillemets ne matchait (l'inverse du probleme "$...$"
-    # juste en dessous : ici c'est le cote pivot.md qui porte un caractere
-    # que le cote course.tex n'a plus).
+    # Guillemets francais « » (\og/\fg) : retires ici, avant les regles
+    # d'espacement ci-dessous qui doivent voir "l'oeil" et non "l' « oeil »".
     text = text.replace("«", " ").replace("»", " ")
+    # "--" (tiret demi-cadratin LaTeX, ex. "Hahn--Banach") : rendu PDF par un
+    # "–" ; "^" (exposant LaTeX, ex. "x^2") : rendu PDF par le seul chiffre.
+    # Ponctuation rendue sans espace ("pooling , sur" -> "pooling, sur").
+    text = text.replace("--", "–").replace("^", "")
+    text = re.sub(r"\s+([,;:.!?])", r"\1", text)
+    text = re.sub(r"'\s+", "'", text)
+    # Exposant/indice et fleche : accolades LaTeX retirees (\mathbb{R}^2 ->
+    # "R 2") alors que le PDF rend "R2" et "→R4" sans espace.
+    # Seule une lettre isolee (ex. "R 2" -> "R2") : un mot entier ("paradoxe 0")
+    # garde son espace.
+    text = re.sub(r"(?<![a-zA-Z])([a-zA-Z])\s+(?=\d)", r"\1", text)
+    text = re.sub(r"\s*→\s*", "→", text)
     # "$...$" (mode mathematique inline, ex. "estimer $f$") : pdflatex rend
     # le contenu (ici "f", en italique) mais jamais les symboles dollar
     # eux-memes — un titre source gardant "$f$" ne matchait donc jamais son
