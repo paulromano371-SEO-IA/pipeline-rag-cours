@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 200" width="640" height="200" role="img" aria-label="Rag4Wordpress">
+  <title>Rag4Wordpress</title>
+  <!-- Pictogramme : livre ouvert relié à un petit graphe de concepts -->
+  <circle cx="100" cy="100" r="82" fill="#1F3A5F"/>
+  <g stroke="#F5A623" stroke-width="3" fill="none">
+    <line x1="78" y1="54" x2="100" y2="84"/>
+    <line x1="100" y1="44" x2="100" y2="84"/>
+    <line x1="122" y1="54" x2="100" y2="84"/>
+  </g>
+  <g fill="#F5A623">
+    <circle cx="78" cy="54" r="6"/>
+    <circle cx="100" cy="44" r="6"/>
+    <circle cx="122" cy="54" r="6"/>
+  </g>
+  <g fill="#FFFFFF">
+    <path d="M62 88 Q84 76 100 84 L100 124 Q84 116 62 128 Z"/>
+    <path d="M138 88 Q116 76 100 84 L100 124 Q116 116 138 128 Z"/>
+  </g>
+  <!-- Nom : le « 4 » en orange -->
+  <text x="210" y="118" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="56" font-weight="700">
+    <tspan fill="#1F3A5F">Rag</tspan><tspan fill="#F5A623">4</tspan><tspan fill="#1F3A5F">Wordpress</tspan>
+  </text>
+</svg>
