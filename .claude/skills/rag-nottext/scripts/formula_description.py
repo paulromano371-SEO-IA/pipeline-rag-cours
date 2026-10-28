@@ -28,6 +28,8 @@ from _claude_code_client import (
 )
 
 DEFAULT_TIMEOUT = 120
+MODEL = "claude-haiku-5-5"
+EFFORT = "medium"
 
 _SYSTEM_PROMPT = (
     "Tu décris des formules mathématiques d'un cours technique, pour un système de recherche "
@@ -73,7 +75,7 @@ def describe_formula(formula_block: str, *, model: str | None = None, timeout: i
 
     for _ in range(MAX_FORMAT_RETRIES + 1):
         try:
-            result = run_claude_code(_SYSTEM_PROMPT, formula_block, model=model, timeout=timeout)
+            result = run_claude_code(_SYSTEM_PROMPT, formula_block, model=model or MODEL, timeout=timeout, effort=EFFORT)
         except ClaudeCodeCallError as exc:
             raise FormulaDescriptionError(str(exc)) from exc
 
@@ -111,7 +113,7 @@ def describe_formula_batch(formula_blocks: list[str], *, model: str | None = Non
 
     for _ in range(MAX_FORMAT_RETRIES + 1):
         try:
-            result = run_claude_code(_BATCH_SYSTEM_PROMPT, input_text, model=model, timeout=timeout)
+            result = run_claude_code(_BATCH_SYSTEM_PROMPT, input_text, model=model or MODEL, timeout=timeout, effort=EFFORT)
         except ClaudeCodeCallError as exc:
             raise FormulaDescriptionError(str(exc)) from exc
 

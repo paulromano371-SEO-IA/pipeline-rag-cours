@@ -448,6 +448,9 @@ def _apply_replacements(markdown: str, replacements: list[tuple[str, str]]) -> s
     cursor = 0
     for needle, replacement in replacements:
         pos = markdown.index(needle, cursor)
+        # Saute les occurrences déjà suivies de leur description (blocs identiques)
+        while markdown[pos + len(needle):].lstrip("\n").startswith(DESCRIPTION_MARKER):
+            pos = markdown.index(needle, pos + len(needle))
         pieces.append(markdown[cursor:pos])
         pieces.append(replacement)
         cursor = pos + len(needle)

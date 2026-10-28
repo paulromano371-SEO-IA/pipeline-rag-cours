@@ -30,6 +30,8 @@ from pathlib import Path
 from _claude_code_client import MAX_FORMAT_RETRIES, clean_plain_text_response, is_single_paragraph, strip_ansi_codes
 
 DEFAULT_TIMEOUT = 120
+MODEL = "claude-haiku-5-5"
+EFFORT = "medium"
 
 _SYSTEM_PROMPT = (
     "Tu décris des images extraites d'un cours technique, pour un système de recherche "
@@ -72,8 +74,7 @@ def describe_image(image_path: Path, categorie: str, *, model: str | None = None
         "--output-format", "json",
         "--system-prompt", _SYSTEM_PROMPT,
     ]
-    if model:
-        cmd += ["--model", model]
+    cmd += ["--model", model or MODEL, "--effort", EFFORT]
 
     input_text = f"Type déjà détecté : {categorie}. Chemin de l'image à lire et décrire : {image_path}"
 

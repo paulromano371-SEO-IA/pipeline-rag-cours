@@ -25,6 +25,8 @@ from _claude_code_client import (
 )
 
 DEFAULT_TIMEOUT = 120
+MODEL = "claude-haiku-5-5"
+EFFORT = "medium"
 
 _SYSTEM_PROMPT = (
     "Tu décris des extraits de code source d'un cours technique, pour un système de recherche "
@@ -69,7 +71,7 @@ def describe_code(code_block: str, *, model: str | None = None, timeout: int = D
 
     for _ in range(MAX_FORMAT_RETRIES + 1):
         try:
-            result = run_claude_code(_SYSTEM_PROMPT, code_block, model=model, timeout=timeout)
+            result = run_claude_code(_SYSTEM_PROMPT, code_block, model=model or MODEL, timeout=timeout, effort=EFFORT)
         except ClaudeCodeCallError as exc:
             raise CodeDescriptionError(str(exc)) from exc
 
@@ -109,7 +111,7 @@ def describe_code_batch(code_blocks: list[str], *, model: str | None = None, tim
 
     for _ in range(MAX_FORMAT_RETRIES + 1):
         try:
-            result = run_claude_code(_BATCH_SYSTEM_PROMPT, input_text, model=model, timeout=timeout)
+            result = run_claude_code(_BATCH_SYSTEM_PROMPT, input_text, model=model or MODEL, timeout=timeout, effort=EFFORT)
         except ClaudeCodeCallError as exc:
             raise CodeDescriptionError(str(exc)) from exc
 

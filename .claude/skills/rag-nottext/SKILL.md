@@ -51,6 +51,29 @@ mêlées à une phrase, déjà entourées de leur propre contexte de prose
 explicatif, donc déjà bien gérée par le modèle d'embedding sans description
 supplémentaire.
 
+## Sans argument : lister les livres
+
+Lance, en premier plan :
+
+```bash
+"<racine_projet>/.venv-rag/Scripts/python.exe" "<racine_projet>/.claude/skills/rag-nottext/scripts/lib/lister_a_nottext.py"
+```
+
+Liste les livres de `corpuscondense/` prêts pour `/rag-nottext` : extraction
+faite avec `status` à `done` et `verdict` à `ok` dans `status.json`, et
+`nottext` pas encore `done`. Lecture seule.
+
+
+
+Présente la liste dans la réponse, en Markdown numéroté, **hors de tout bloc de code**, avec les noms exacts.
+
+- **Sans `--all`** : attends le choix de l’utilisateur :
+  - **Numéro** : relance la liste pour avoir l’état à jour, puis prends le livre portant ce numéro. Numéro absent : signale-le et redemande.
+  - **Nom** : cherche le livre dans `corpusdedepart/` (insensible à la casse, correspondance exacte ou sous-chaîne unique). Zéro ou plusieurs correspondances : signale-le et redemande.
+- **Avec `--all`** : Traite les livres de la liste **un par un, dans l’ordre**. Annonce chaque livre en une ligne (numéro, nom, `document_id`), puis, une fois la liste épuisée, affiche un tableau récapitulatif : une ligne par livre, avec son verdict et son `document_id`.
+
+Le livre choisi se traite ensuite avec le PDF `corpuscondense/<nom>.pdf` (ou son `document_id`) comme argument, décrit ci-dessous.
+
 ## Interpréteur Python
 
 Tout script de ce skill se lance **uniquement** avec
@@ -84,6 +107,7 @@ Le script accepte indifféremment : le même chemin de PDF condensé passé à
 dossier `rag_data/work/<document_id>/`.
 
 Options :
+
 - `--force` : retraite même si l'étape est déjà marquée `done`.
 - `--model NAME` : modèle Claude à utiliser pour les descriptions (défaut :
   celui de l'installation `claude` locale).
@@ -95,6 +119,7 @@ Options :
 
 **État des lieux affiché avant tout traitement** (`_print_status_overview`
 dans `run.py`), toujours dans cet ordre :
+
 1. total d'éléments non-textuels du document, par type (image/code/formule) ;
 2. combien sont déjà traités, par type ;
 3. combien restent à traiter, par type ;
@@ -358,13 +383,14 @@ fichiers de `images/` sont mis à jour/renommés en place. `status.json` mis
 Le script affiche lui-même, sur ses dernières lignes de sortie, un rapport
 Markdown complet et déjà formaté (titre, synthèse chiffrée, tableau
 identifiant/fichier/type/longueur-description/transcription, liste des
-échecs — voir `_build_report` dans `run.py`) : **relaie ce rapport tel
+échecs — voir `_build_report` dans `scripts/run.py`) : **relaie ce rapport tel
 quel**, jamais une reconstruction manuelle à partir de `nottext_meta.json`
 — le format ne laisse aucune place à l'interprétation, ce n'est donc jamais
 à toi de le recalculer ni de le reformuler (même principe que
-`rag-extraction/scripts/run.py:_build_report`, voir son SKILL.md).
+`rag-extraction/scripts/lib/rapport.py:construire_rapport`, voir son SKILL.md).
 
 **Contrôles** (`_rag_lib/checks.py`, affichés avant le rapport) :
+
 - **Entrée** (code `1` si échec) : `pivot.md` non vide, `/rag-extraction`
   terminé sans bloquant, images référencées présentes dans `images/`, CLI
   `claude` disponible.
