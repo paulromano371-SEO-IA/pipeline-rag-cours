@@ -17,10 +17,7 @@ C'est la **deuxième étape du pipeline RAG**, après `/cours-condense`. Les ét
 
 `/rag-nottext` → `/rag-chunking` → `/rag-index` → `/rag-concepts` → `/rag-graphe`
 
-Le script est **entièrement déterministe**. Il s'appuie sur PyMuPDF. Aucun appel à un
-modèle n'est fait, et aucun contenu n'est rédigé. La réparation des ligatures et le
-recollage des césures utilisent un dictionnaire français hors ligne (`pyspellchecker`),
-jamais une inférence.
+La commande est **quasi entièrement déterministe**. Elle s'appuie sur PyMuPDF. Aucun appel externe à un modèle n'est fait à l'intérieur des scripts mais le modèle de la session principale est utilisé ( cf 2.5) , et aucun contenu n'est rédigé. La réparation des ligatures et le recollage des césures utilisent un dictionnaire français hors ligne (`pyspellchecker`), jamais une inférence.
 
 ### Utilisation
 

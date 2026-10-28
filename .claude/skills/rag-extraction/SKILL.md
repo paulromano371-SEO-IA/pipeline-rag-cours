@@ -1,6 +1,6 @@
 # /rag-extraction — Étape 2 du pipeline RAG
 
-Convertit un PDF de cours condensé (`corpuscondense/`, sortie de `/cours-condense`) en markdown pivot : `rag_data/work/<document_id>/pivot.md`. Aucun appel à `claude`, aucune rédaction de contenu.
+Convertit un PDF de cours condensé (`corpuscondense/`, sortie de `/cours-condense`) en markdown pivot : `rag_data/work/<document_id>/pivot.md`. Aucun appel externe à `claude` n'est fait à l'intérieur des scripts, aucune rédaction de contenu.
 
 ## Usage
 
