@@ -103,6 +103,7 @@ def verifier_chapitre(nom_du_livre, chapitre):
 
 
 def main():
+    sys.stdout.reconfigure(encoding="utf-8")
     if len(sys.argv) != 3:
         print("Usage: python verifier_illustrations.py <nom_du_livre> <plan_cours.json>")
         sys.exit(1)

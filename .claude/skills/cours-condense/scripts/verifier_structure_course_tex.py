@@ -184,6 +184,7 @@ def main():
         "figures_entre_listings_a_verifier": check_figure_entre_listings_indicatif(texte),
         "pret": len(anomalies) == 0,
     }
+    sys.stdout.reconfigure(encoding="utf-8")
     print(json.dumps(rapport, ensure_ascii=False, indent=2))
 
 

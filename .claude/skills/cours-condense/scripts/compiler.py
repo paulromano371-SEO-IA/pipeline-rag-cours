@@ -24,6 +24,11 @@ import subprocess
 import re
 import shutil
 
+# Console Windows en cp1252 : les logs LaTeX peuvent contenir des caracteres
+# hors cp1252 (ex. U+FFFD), ce qui faisait planter print() et masquait l'erreur.
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+
 
 def build_clean_env():
     env = os.environ.copy()

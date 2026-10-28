@@ -23,7 +23,7 @@ import re
 
 
 BLOC_FIXE = r"""
-\usepackage[colorlinks=true, linkcolor=black, citecolor=black, urlcolor=black]{hyperref}
+\usepackage[unicode=true, colorlinks=true, linkcolor=black, citecolor=black, urlcolor=black]{hyperref}
 \hypersetup{pdfauthor={Notebook}, pdftitle={%s}}
 \usepackage{cleveref}
 

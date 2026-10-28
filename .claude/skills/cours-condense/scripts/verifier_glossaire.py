@@ -54,6 +54,10 @@ def main():
         glossaire = json.load(f)
     with open(course_tex_path, "r", encoding="utf-8") as f:
         texte = f.read()
+        # chemins des figures (\includegraphics) : pas de la prose, masqués pour le contrôle terminologique
+        texte = re.sub(r"\\includegraphics(\[[^\]]*\])?\{[^}]*\}", lambda m: " " * len(m.group(0)), texte)
+        # blocs de code (identifiants, noms de fonctions) : verbatim, pas de la prose, masqués aussi ; les sauts de ligne sont conservés
+        texte = re.sub(r"\\begin\{lstlisting\}.*?\\end\{lstlisting\}", lambda m: re.sub(r"[^\n]", " ", m.group(0)), texte, flags=re.DOTALL)
 
     anomalies = []
     for terme, valeur in glossaire.items():

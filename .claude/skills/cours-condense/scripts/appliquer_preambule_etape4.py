@@ -23,24 +23,24 @@ import os
 
 
 BLOC_FIXE = r"""
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french]{babel}
 \usepackage{xcolor,graphicx,tcolorbox,listings}
 \usepackage{amsmath,amssymb,amsfonts,amsthm}
 \usepackage[scaled=0.85]{beramono}
 \definecolor{coursebleu}{HTML}{1a365d}
 \definecolor{courseorange}{HTML}{c25e00}
 \lstdefinestyle{pythonstyle}{
-   language=Python, backgroundcolor=\color{white}, commentstyle=\color{courseorange}\itshape,
+   language=Python, extendedchars=true, literate={–}{{--}}1 {█}{{\#}}1 {═}{{=}}1 {║}{{|}}1 {╗}{{+}}1 {╝}{{+}}1 {╚}{{+}}1 {╔}{{+}}1 {╭}{{+}}1 {╰}{{+}}1 {❌}{{X}}1 {✅}{{OK}}1 {🚀}{{>}}1 {🔐}{{\#}}1 {📊}{{\#}}1 {💼}{{\#}}1 {📚}{{\#}}1 {👉}{{>}}1 {é}{{\'e}}1 {è}{{\`e}}1 {ê}{{\^e}}1 {à}{{\`a}}1 {â}{{\^a}}1 {ô}{{\^o}}1 {î}{{\^i}}1 {û}{{\^u}}1 {ù}{{\`u}}1 {É}{{\'E}}1 {À}{{\`A}}1, backgroundcolor=\color{white}, commentstyle=\color{courseorange}\itshape,
    keywordstyle=\color{coursebleu}\bfseries, numberstyle=\tiny\color{gray}, stringstyle=\color{teal},
    basicstyle=\ttfamily\small, breaklines=true, breakatwhitespace=false, numbers=left,
    numbersep=5pt, frame=single, captionpos=b, showstringspaces=false, tabsize=4
 }
 \lstset{style=pythonstyle}
 
-\usepackage[utf8]{inputenc}
-\usepackage[T1]{fontenc}
-\usepackage[french]{babel}
 \usepackage{caption}
-\newtcolorbox{conceptbox}{colback=blue!5,colframe=blue!50!black,title={Concept Cle},fonttitle=\bfseries}
+\newtcolorbox{conceptbox}{colback=blue!5,colframe=blue!50!black,title={Concept Clé},fonttitle=\bfseries}
 \newtcolorbox{warningbox}{colback=orange!5,colframe=orange!70!black,title={Attention / Warning},fonttitle=\bfseries}
 \newtcolorbox{rememberbox}{colback=green!5,colframe=green!50!black,title={Rappel / Remember},fonttitle=\bfseries}
 

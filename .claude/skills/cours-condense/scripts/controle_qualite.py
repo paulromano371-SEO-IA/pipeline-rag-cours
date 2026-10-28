@@ -80,7 +80,7 @@ MOTS_MIN_LONGUEUR = 3
 IGNORER_TOUJOURS = {
     "llm", "llms", "rag", "graphrag", "cypher", "neo4j", "json", "python",
     "api", "url", "http", "https", "id", "ids", "gpt", "openai", "csv",
-    "sql", "html", "pdf", "ok",
+    "sql", "html", "pdf", "ok", "chainer",
 }
 
 
@@ -115,6 +115,13 @@ def _masquer(texte):
     t = LSTLISTING_RE.sub(_blanchir_lstlisting, texte)
     t = LSTINLINE_RE.sub(lambda m: _blanchir(m.group(0)), t)
     t = COMMENT_RE.sub(lambda m: _blanchir(m.group(0)), t)
+    # chemins de fichiers des figures (illustrations/xxx.png) : ce ne sont pas
+    # de la prose, et leurs noms sans accent ne doivent pas etre signales
+    # identifiants de code (\texttt{...}) : non de la prose, exclus du controle lexical
+    t = re.sub(r"\\texttt\{[^{}]*\}", lambda m: _blanchir(m.group(0)), t)
+    t = re.sub(r"\\includegraphics(\[[^\]]*\])?\{[^}]*\}", lambda m: _blanchir(m.group(0)), t)
+    # identifiants LaTeX (\label{...}, \ref{...}) : des clés de référence, pas de la prose
+    t = re.sub(r"\\(label|ref|cref|Cref|eqref)\{[^{}]*\}", lambda m: _blanchir(m.group(0)), t)
     return t
 
 
@@ -169,7 +176,9 @@ def check_mise_en_forme_interdite(texte):
 
 
 def check_citations(texte):
+    # les crochets en formule ($W^{[1]}$, \[ ... \]) sont de la notation, pas des citations
     texte_prose = _masquer(texte)
+    texte_prose = re.sub(r"\$[^$]*\$|\\\[.*?\\\]", lambda m: _blanchir(m.group(0)), texte_prose, flags=re.S)
     problemes = []
     for m in CITATION_RE.finditer(texte_prose):
         ligne = ligne_de(texte, m.start())
@@ -193,6 +202,7 @@ class VerificateurAccents:
 
     def __init__(self):
         self.spell = SpellChecker(language="fr")
+        self.spell_en = SpellChecker(language="en")
         self._index_inverse = {}
         for mot in self.spell.word_frequency.dictionary:
             sans_accent = _strip_accents(mot).lower()
@@ -203,6 +213,17 @@ class VerificateurAccents:
         """Retourne la liste des formes accentuees possibles pour mot_minuscule
         s'il correspond a un mot francais connu uniquement accentue, sinon None."""
         return self._index_inverse.get(mot_minuscule)
+
+
+def _dans_compose_anglais(texte, match, verificateur):
+    """Vrai si le mot fait partie d'un compose relie par trait d'union dont une partie est un mot anglais."""
+    debut, fin = match.start(), match.end()
+    while debut > 0 and texte[debut - 1] in "-‑":
+        debut = re.search(r"[A-Za-zÀ-ÿ]*$", texte[:debut - 1]).start()
+    while fin < len(texte) and texte[fin] in "-‑":
+        fin = re.match(r"[A-Za-zÀ-ÿ]*", texte[fin + 1:]).end() + fin + 1
+    parties = re.split(r"[-‑]", texte[debut:fin].lower())
+    return len(parties) > 1 and any(p in verificateur.spell_en for p in parties)
 
 
 def check_accents_manquants(texte, verificateur):
@@ -218,6 +239,12 @@ def check_accents_manquants(texte, verificateur):
         if mot_lower in verificateur.spell:
             # deja un mot francais valide tel quel (correctement accentue,
             # ou mot qui n'a legitimement pas d'accent)
+            continue
+        if mot_lower in verificateur.spell_en:
+            # mot anglais (ex. "the", "Series") : pas un mot francais sans accent
+            continue
+        if _dans_compose_anglais(texte_prose, m, verificateur):
+            # partie d'un nom anglais compose (ex. "Pre-training", "Open-Meteo")
             continue
         suggestions = verificateur.suggerer(mot_lower)
         if not suggestions:
@@ -373,6 +400,7 @@ def fix_doublons_hyperref(texte):
 
 
 def main():
+    sys.stdout.reconfigure(encoding="utf-8")
     if len(sys.argv) != 2:
         print("Usage: python controle_qualite.py <course.tex>")
         sys.exit(1)
