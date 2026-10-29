@@ -1,6 +1,6 @@
 # ![](/images/logo.png)
 
-*Rag4Wordpress est né de l'idée de rendre accessible l'apprentissage de l'IA.*
+       *Rag4Wordpress est né de l'idée de rendre accessible l'apprentissage de l'IA.*
 
 ![](/images/1ereimage.png)
 
