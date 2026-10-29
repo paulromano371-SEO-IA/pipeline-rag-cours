@@ -4,7 +4,7 @@
 
 ![](/images/1ereimage.png)
 
-Cette solution transforme des pdfs techniques complexes en **supports de cours condensé de grande qualité et en français**, puis ingère ces supports dans une base de connaissance interrogeable : recherche vectorielle (RAG classique)  et graphe de concepts (GraphRAG), le tout via une série de [skills Claude Code](https://docs.claude.com/claude-code) enchaînés.
+Cette solution transforme des pdfs techniques complexes en **supports de cours condensé pédagogiques de grande qualité et en français**, puis ingère ces supports dans une base de connaissance interrogeable : recherche vectorielle (RAG classique)  et graphe de concepts (GraphRAG), le tout via une série de [skills Claude Code](/tree/main/.claude/skills) enchaînés.
 
 **Objectif** : vulgariser des pdfs techniques complexes pour en tirer des contenus web très pédagogiques et uniques. Le corpus condensé et ingéré est la seule source de faits : chaque article est rédigé à partir de ce que contiennent réellement les supports condensés, puis envoyé sur un site WordPress.
 
@@ -17,7 +17,7 @@ pdf (corpusdedepart/)
 1. /cours-condense   →  cours condensé en français, PDF (corpuscondense/)
       │
       ▼
-2. /rag-extraction   →  markdown pivot structuré + images extraites
+2. /rag-extraction   →  markdown pivot structuré + images extraites du cours condensé
       │
       ▼
 3. /rag-nottext       →  description en langage naturel des images, du code et des formules
@@ -38,19 +38,19 @@ pdf (corpusdedepart/)
 8. /rag-integrity    →  audit de qualité du graphe (à la demande, transversal au corpus)
       │
       ▼
-9. /expressions-article  →  expressions méritant un article dédié, vérifiées dans le graphe
+9. /expressions-article  →  détection des expressions méritant un article dédié, vérifiées dans le graphe
       │
       ▼
-10. /create-content  →  article web pédagogique (Markdown, frontmatter SEO, images)
+10. /create-content  →  création d'un article web pédagogique (Markdown, frontmatter SEO, images)
       │
       ▼
-11. /publish-content →  brouillon WordPress (images, texte alternatif, légendes)
+11. /publish-content →  publication d'un article en brouillon WordPress (images, texte alternatif, légendes)
       │
       ▼
 12. /maillage        →  propositions de liens internes entre articles
       │
       ▼
-13. /publish-maillage →  liens internes insérés dans les articles déjà en ligne
+13. /publish-maillage →  publication des liens internes dans les articles déjà en ligne
 ```
 
 Les étapes 1 à 7 forment l'**ingestion** d'un pdf dans la base RAG. Les étapes 8 à 13 exploitent ensuite ce corpus : audit, rédaction d'articles, publication et maillage.
@@ -63,7 +63,7 @@ Chaque étape est une commande indépendante (un skill Claude Code), invocable s
 
 `/cours-condense <chemin_vers_livre.pdf>`
 
-Lit le pdf source **intégralement** (jamais un extrait) et produit un support de cours condensé en français, compilé en PDF via LaTeX. Le texte est réécrit dans un ton pédagogique, le code source est repris à l'identique (jamais reformulé), et des illustrations vectorielles originales sont créées pour appuyer les explications. Aucune longueur cible n'est fixée à l'avance : le plan et la compression découlent uniquement du contenu réellement essentiel du pdf.
+Lit le pdf source **intégralement** (jamais un extrait) et produit un support de cours condensé en français, compilé en PDF via LaTeX. Le texte est réécrit dans un ton pédagogique, le code source est repris à l'identique (jamais reformulé), et des illustrations vectorielles originales sont créées pour appuyer les explications. Aucune image du pdf source n'est reprise. Aucune longueur cible n'est fixée à l'avance : le plan et la compression découlent uniquement du contenu réellement essentiel du pdf.
 
 **Exemple de support condensé** : 
 
@@ -75,7 +75,7 @@ Lit le pdf source **intégralement** (jamais un extrait) et produit un support d
 
 `/rag-extraction <chemin_vers_pdf_condense>`
 
-Convertit le PDF condensé (sortie de l'étape 1) en un markdown "pivot" qui distingue proprement titres, code et prose, et extrait les images natives du PDF. Une réparation automatique des ligatures typographiques cassées (ex. "ﬁ", "ﬂ") est appliquée si nécessaire. Traite aussi la détection de formules mathématiques mal ordonnées par l'extraction PDF brute.
+Convertit le PDF condensé (sortie de l'étape 1) en un markdown "pivot" qui distingue proprement titres, code et prose, et extrait les images du cours condensé. Une réparation automatique des ligatures typographiques cassées (ex. "ﬁ", "ﬂ") est appliquée si nécessaire. Traite aussi la détection de formules mathématiques mal ordonnées par l'extraction PDF brute.
 
 ### 3. `/rag-nottext` — Description des éléments non-textuels
 
@@ -119,19 +119,19 @@ Une fois le graphe du document terminé, une **consolidation** du graphe partag�
 
 `/rag-integrity`
 
-Hors pipeline et transversal au corpus, à lancer à la demande (par exemple après l'ajout d'un pdf). En deux étapes : `report.py` calcule de façon déterministe les métriques du graphe (volumes par pdf, hubs, alias suspects, fusions manquées ou à tort, doublons) et repère les cas ambigus avec des extraits de chunks réels ; puis `audit_lot.py` fait juger ces cas par `claude -p`, par lots. Les rapports, l'historique et le registre des décisions sont écrits sous `rag_data/audit/`.
+Hors pipeline et transversal au corpus, à lancer à la demande (par exemple après l'ajout d'un pdf). En deux étapes : `report.py` calcule de façon déterministe les métriques du graphe (volumes par pdf, hubs, alias suspects, fusions manquées ou à tort, doublons) et repère les cas ambigus avec des extraits de chunks réels ; puis `audit_lot.py` fait juger ces cas par `claude -p`, par lots. Les rapports, l'historique et le registre des décisions sont écrits sous `rag_data/audit/`. Cette commande ne fait qu'auditer l'intégrité du graphe RAG et ne modifie jamais rien.
 
 ### 9. `/expressions-article` — Expressions à approfondir
 
 `/expressions-article <slug>` (ou `<numéro>`, ou `--all`)
 
-Lecture seule. Repère dans un article de `rag_data/content/work/` les expressions (méthodes, outils, concepts, métriques, acronymes) qui méritent un contenu dédié. Chacune est vérifiée dans la base graphe (existe-t-elle dans le corpus, et de quel type est-elle ?), puis dans les articles existants (déjà traitée, simplement mentionnée, ou absente). Le skill propose les commandes `/create-content` prêtes à lancer.
+Commande qui repère dans un article de `rag_data/content/work/` les expressions (méthodes, outils, concepts, métriques, acronymes) qui méritent un contenu dédié. Chacune est vérifiée dans la base graphe (existe-t-elle dans le corpus, et de quel type est-elle ?), puis dans les articles existants (déjà traitée, simplement mentionnée, ou absente). Le skill propose les expressions trouvées à la commande suivante `/create-content` .
 
 ### 10. `/create-content` — Rédaction d'un article web
 
 `/create-content <expression>` (ex. `/create-content comment fonctionne une régression logistique ?`)
 
-Hors pipeline d'ingestion : exploite le corpus déjà ingéré pour rédiger **un article web pédagogique** (Markdown + frontmatter SEO + images) sur une expression donnée. Le RAG est la **seule source de faits** : Claude ne fait que le travail éditorial (angle, progression, pédagogie) et n'apporte jamais une affirmation technique tirée de ses connaissances générales. Ce que le corpus ne couvre pas est signalé dans le rapport final, jamais comblé de mémoire.
+Cette commande exploite le corpus déjà ingéré pour rédiger **un article web pédagogique** (Markdown + frontmatter SEO + images) sur une expression donnée. Le RAG est la **seule source de faits** : Claude ne fait que le travail éditorial (angle, progression, pédagogie) et n'apporte jamais une affirmation technique tirée de ses connaissances générales. Ce que le corpus ne couvre pas est signalé dans le rapport final, jamais comblé de mémoire.
 
 Le skill procède en 5 étapes, toujours en foreground :
 
@@ -151,7 +151,7 @@ Sortie : `rag_data/content/work/<slug>/` (`article.md`, `dossier.md`, `dossier.j
 
 `/publish-content <slug>` (le slug est le nom du dossier sous `rag_data/content/work/`)
 
-Envoie sur WordPress, via l'API REST, un article produit par `/create-content`. L'article est **toujours créé en brouillon** : aucune option ne permet de le publier directement, la mise en ligne se fait à la main dans WordPress.
+Cette commande envoie sur un site WordPress, via l'API REST, un article produit par `/create-content`. L'article est **toujours créé en brouillon** : aucune option ne permet de le publier directement, la mise en ligne se fait à la main dans WordPress.
 
 - **Images** : chacune est uploadée avec son texte alternatif (celui de l'article), sa légende (la phrase qui suit l'image, retirée du corps pour éviter le doublon) et sa description détaillée issue du pipeline RAG. Aucun champ ne mentionne la source (pdf, section). Une image déjà présente dans la médiathèque (même nom de fichier) est réutilisée au lieu d'être ré-uploadée ; `--no-check-existing` force l'upload.
 - **Contenu** : Markdown converti en HTML avec blocs image Gutenberg, commentaires de traçabilité `<!--src:...-->` retirés, titre, extrait (description SEO) et slug repris du frontmatter. Les formules LaTeX sont préservées et le shortcode `[latexpage]` ajouté pour le plugin QuickLaTeX du site.
@@ -166,13 +166,13 @@ Envoie sur WordPress, via l'API REST, un article produit par `/create-content`. 
 
 `/maillage <slug>` (ou `<numéro>`, ou `--all`)
 
-Construit une base vectorielle et un graphe Kuzu **à part**, sur les articles (chunks, concepts). Pour chaque article source, repère les expressions de son texte qui peuvent servir d'ancres vers les autres articles, puis fait relire chaque paire d'articles liée. Un rapport par article est écrit dans `rag_data/maillage/work/<slug>/`. Ne modifie aucun article et ne touche pas à WordPress.
+Cette commande construit une base vectorielle et un graphe Kuzu **à part** ( totalement indépendant de celles des cours condensés) sur les articles web crées. Pour chaque article crée, repère les expressions de son texte qui peuvent servir d'ancres vers les autres articles, puis fait relire chaque paire d'articles liée. Un rapport par article est écrit dans `rag_data/maillage/work/<slug>/`. Ne modifie aucun article et ne touche pas à WordPress. Tout se passe en local avec les articles crées en local avec la commande ` /create-content `
 
 ### 13. `/publish-maillage` — Insertion des liens sur WordPress
 
 `/publish-maillage <slug>` (ou `<numéro>`, ou `--all`)
 
-Insère dans l'article déjà en ligne sur WordPress les liens relatifs proposés par `/maillage`, à partir du rapport. Un dry-run est obligatoire d'abord, le contenu d'origine est sauvegardé avant écriture, et le statut du post ne change pas.
+Cette commande insère dans l'article déjà en ligne sur WordPress les liens relatifs proposés par `/maillage`, à partir du rapport. Un dry-run est obligatoire d'abord, le contenu d'origine est sauvegardé avant écriture, et le statut du post ne change pas.
 
 ### Orchestrateur : `/ragpipeline`
 
