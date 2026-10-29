@@ -4,7 +4,7 @@
 
 ![](/images/1ereimage.png)
 
-Cette solution transforme des pdfs techniques complexes en **supports de cours condensé pédagogiques de grande qualité et en français**, puis ingère ces supports dans une base de connaissance interrogeable : recherche vectorielle (RAG classique)  et graphe de concepts (GraphRAG), le tout via une série de [skills Claude Code](/tree/main/.claude/skills) enchaînés.
+Cette solution transforme des pdfs techniques complexes en **supports de cours condensé pédagogiques de grande qualité et en français**, puis ingère ces supports dans une base de connaissance interrogeable : recherche vectorielle (RAG classique)  et graphe de concepts (GraphRAG), le tout via une série de [skills Claude Code](https://github.com/paulromano371-SEO-IA/pipeline-rag-cours/tree/main/.claude/skills) enchaînés.
 
 **Objectif** : vulgariser des pdfs techniques complexes pour en tirer des contenus web très pédagogiques et uniques. Le corpus condensé et ingéré est la seule source de faits : chaque article est rédigé à partir de ce que contiennent réellement les supports condensés, puis envoyé sur un site WordPress.
 
