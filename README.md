@@ -90,7 +90,7 @@ Chaque étape est une commande indépendante (un skill Claude Code), invocable s
 
 <a id="etape-1"></a>
 
-### 1. `/cours-condense` — Génération du cours condensé
+### 1. `/cours-condense` — Génération du cours condensé · [🔗](https://github.com/paulromano371-SEO-IA/pipeline-rag-cours/tree/main/.claude/skills/cours-condense "Lien vers la commande cours-condense")
 
 `/cours-condense <chemin_vers_livre.pdf>`
 
@@ -104,7 +104,7 @@ Lit le pdf source **intégralement** (jamais un extrait) et produit un support d
 
 <a id="etape-2"></a>
 
-### 2. `/rag-extraction` — Conversion en markdown pivot
+### 2. `/rag-extraction` — Conversion en markdown pivot · [🔗](https://github.com/paulromano371-SEO-IA/pipeline-rag-cours/tree/main/.claude/skills/rag-extraction "Lien vers la commande rag-extraction")
 
 `/rag-extraction <chemin_vers_pdf_condense>`
 
@@ -112,7 +112,7 @@ Convertit le PDF condensé (sortie de l'étape 1) en un markdown "pivot" qui dis
 
 <a id="etape-3"></a>
 
-### 3. `/rag-nottext` — Description des éléments non-textuels
+### 3. `/rag-nottext` — Description des éléments non-textuels · [🔗](https://github.com/paulromano371-SEO-IA/pipeline-rag-cours/tree/main/.claude/skills/rag-nottext "Lien vers la commande rag-nottext")
 
 `/rag-nottext <pdf_condense_ou_document_id>`
 
@@ -120,7 +120,7 @@ Pour chaque image, bloc de code et formule d'affichage (déjà en LaTeX) produit
 
 <a id="etape-4"></a>
 
-### 4. `/rag-chunking` — Découpage en chunks
+### 4. `/rag-chunking` — Découpage en chunks · [🔗](https://github.com/paulromano371-SEO-IA/pipeline-rag-cours/tree/main/.claude/skills/rag-chunking "Lien vers la commande rag-chunking")
 
 `/rag-chunking <pdf_condense_ou_document_id>`
 
@@ -128,7 +128,7 @@ Découpe le markdown pivot enrichi en chunks d'environ 400 tokens (avec recouvre
 
 <a id="etape-5"></a>
 
-### 5. `/rag-index` — Indexation vectorielle
+### 5. `/rag-index` — Indexation vectorielle · [🔗](https://github.com/paulromano371-SEO-IA/pipeline-rag-cours/tree/main/.claude/skills/rag-index "Lien vers la commande rag-index")
 
 `/rag-index <pdf_condense_ou_document_id>`
 
@@ -136,7 +136,7 @@ Calcule les embeddings de chaque chunk (modèle multilingue local `BAAI/bge-m3` 
 
 <a id="etape-6"></a>
 
-### 6. `/rag-concepts` — Extraction des concepts
+### 6. `/rag-concepts` — Extraction des concepts · [🔗](https://github.com/paulromano371-SEO-IA/pipeline-rag-cours/tree/main/.claude/skills/rag-concepts "Lien vers la commande rag-concepts")
 
 `/rag-concepts <pdf_condense_ou_document_id>`
 
@@ -144,7 +144,7 @@ Pour chaque chunk indexable, un appel `claude -p` headless extrait 3 à 8 concep
 
 <a id="etape-7"></a>
 
-### 7. `/rag-graphe` — Construction du graphe de connaissances (GraphRAG)
+### 7. `/rag-graphe` — Construction du graphe de connaissances (GraphRAG) · [🔗](https://github.com/paulromano371-SEO-IA/pipeline-rag-cours/tree/main/.claude/skills/rag-graphe "Lien vers la commande rag-graphe")
 
 `/rag-graphe <pdf_condense_ou_document_id>`
 
@@ -160,7 +160,7 @@ Une fois le graphe du document terminé, une **consolidation** du graphe partag�
 
 <a id="etape-8"></a>
 
-### 8. `/rag-integrity` — Audit du graphe
+### 8. `/rag-integrity` — Audit du graphe · [🔗](https://github.com/paulromano371-SEO-IA/pipeline-rag-cours/tree/main/.claude/skills/rag-integrity "Lien vers la commande rag-integrity")
 
 `/rag-integrity`
 
@@ -168,7 +168,7 @@ Hors pipeline et transversal au corpus, à lancer à la demande (par exemple apr
 
 <a id="etape-9"></a>
 
-### 9. `/expressions-article` — Expressions à approfondir
+### 9. `/expressions-article` — Expressions à approfondir · [🔗](https://github.com/paulromano371-SEO-IA/pipeline-rag-cours/tree/main/.claude/skills/expressions-article "Lien vers la commande expressions-article")
 
 `/expressions-article <slug>` (ou `<numéro>`, ou `--all`)
 
@@ -176,7 +176,7 @@ Commande qui repère dans un article de `rag_data/content/work/` les expressions
 
 <a id="etape-10"></a>
 
-### 10. `/create-content` — Rédaction d'un article web
+### 10. `/create-content` — Rédaction d'un article web · [🔗](https://github.com/paulromano371-SEO-IA/pipeline-rag-cours/tree/main/.claude/skills/create-content "Lien vers la commande create-content")
 
 `/create-content <expression>` (ex. `/create-content comment fonctionne une régression logistique ?`)
 
@@ -198,7 +198,7 @@ Sortie : `rag_data/content/work/<slug>/` (`article.md`, `dossier.md`, `dossier.j
 
 <a id="etape-11"></a>
 
-### 11. `/publish-content` — Publication sur WordPress
+### 11. `/publish-content` — Publication sur WordPress · [🔗](https://github.com/paulromano371-SEO-IA/pipeline-rag-cours/tree/main/.claude/skills/publish-content "Lien vers la commande publish-content")
 
 `/publish-content <slug>` (le slug est le nom du dossier sous `rag_data/content/work/`)
 
@@ -215,7 +215,7 @@ Cette commande envoie sur un site WordPress, via l'API REST, un article produit 
 
 <a id="etape-12"></a>
 
-### 12. `/maillage` — Propositions de maillage interne
+### 12. `/maillage` — Propositions de maillage interne · [🔗](https://github.com/paulromano371-SEO-IA/pipeline-rag-cours/tree/main/.claude/skills/maillage "Lien vers la commande maillage")
 
 `/maillage <slug>` (ou `<numéro>`, ou `--all`)
 
@@ -223,7 +223,7 @@ Cette commande construit une base vectorielle et un graphe Kuzu **à part** ( to
 
 <a id="etape-13"></a>
 
-### 13. `/publish-maillage` — Insertion des liens sur WordPress
+### 13. `/publish-maillage` — Insertion des liens sur WordPress · [🔗](https://github.com/paulromano371-SEO-IA/pipeline-rag-cours/tree/main/.claude/skills/publish-maillage "Lien vers la commande publish-maillage")
 
 `/publish-maillage <slug>` (ou `<numéro>`, ou `--all`)
 
@@ -231,7 +231,7 @@ Cette commande insère dans l'article déjà en ligne sur WordPress les liens re
 
 <a id="orchestrateur"></a>
 
-### Orchestrateur : `/ragpipeline`
+### Orchestrateur : `/ragpipeline` · [🔗](https://github.com/paulromano371-SEO-IA/pipeline-rag-cours/tree/main/.claude/skills/ragpipeline "Lien vers la commande ragpipeline")
 
 `/ragpipeline <chemin_vers_livre.pdf> [--from ETAPE] [--force]`
 
