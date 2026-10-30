@@ -1,10 +1,10 @@
-"""Liste les livres a extraire pour /rag-extraction (commande sans argument).
+"""Liste les pdf a extraire pour /rag-extraction (commande sans argument).
 
 Usage:
     python lister_a_extraire.py
 
 Pour chaque PDF de corpusdedepart/ dont le condense existe dans
-corpuscondense/<slug>.pdf, affiche le livre s'il n'a pas encore d'extraction
+corpuscondense/<slug>.pdf, affiche le pdf s'il n'a pas encore d'extraction
 exploitable, c'est-a-dire si l'une de ces conditions est vraie :
     - rag_data/work/<document_id>/pivot.md est absent
     - rag_data/work/<document_id>/status.json est absent
@@ -30,7 +30,7 @@ import status as status_lib
 
 
 def _raison_a_extraire(work_dir: Path) -> str | None:
-    """Motif pour lequel le livre doit etre extrait, ou None s'il est a jour."""
+    """Motif pour lequel le pdf doit etre extrait, ou None s'il est a jour."""
     if not (work_dir / "pivot.md").exists():
         return "pivot.md absent"
     if not (work_dir / "status.json").exists():

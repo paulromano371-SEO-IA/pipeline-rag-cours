@@ -38,7 +38,7 @@ from tex_source import extract_display_segments, extract_illustration_basenames
 _MAX_HEADING_LEVELS = 4
 _CODE_FONT_MIN_SAMPLES = 20
 _CODE_FONT_MAX_CV = 0.20
-_CODE_LINE_MIN_RATIO = 0.9
+_CODE_LINE_MIN_RATIO = 1.0  # toute la ligne doit être en police à chasse fixe (voir commentaire suivant)
 # Une vraie ligne de code (une fois un eventuel numero de ligne retire) est
 # quasi-integralement en police(s) a chasse fixe — verifie empiriquement,
 # ratio 1.0 dans tous les cas observes. Un ratio bas plus permissif (0.6)
@@ -96,7 +96,7 @@ _STRIP_CHARS = " \t\n\r"
 # préambule fixe de /cours-condense (appliquer_preambule_etape4.py) charge
 # ces packages sans package de police alternatif, donc TOUT PDF de
 # corpuscondense/ (sortie de /cours-condense) utilise ces noms de police
-# pour les maths, quel que soit le livre source. CMMI/CMSY/CMEX ne servent
+# pour les maths, quel que soit le pdf source. CMMI/CMSY/CMEX ne servent
 # JAMAIS à autre chose qu'à du contenu mathématique dans une compilation
 # LaTeX standard — un signal fiable, pas une heuristique statistique.
 _MATH_FONT_PREFIXES = ("CMMI", "CMSY", "CMEX")
@@ -491,7 +491,7 @@ def _line_to_element(
 
     code_chars = sum(len(s["text"]) for s in non_space_spans if s["font"] in code_fonts)
     total_chars = sum(len(s["text"]) for s in non_space_spans)
-    is_code_line = not heading_level and total_chars > 0 and code_chars / total_chars > _CODE_LINE_MIN_RATIO
+    is_code_line = not heading_level and total_chars > 0 and code_chars / total_chars >= _CODE_LINE_MIN_RATIO
 
     if not heading_level and not is_code_line and _is_formula_line(non_space_spans):
         text = "".join(s["text"] for s in spans).strip(_STRIP_CHARS)
@@ -991,7 +991,7 @@ def _merge_contiguous_code_runs(ordered: list[_Element]) -> list[_Element]:
     voire par mot recoloré syntaxiquement — sans que cela corresponde à une
     quelconque limite dans le `lstlisting` d'origine : sans cette fusion, un
     seul bloc de code source explose en autant de fences Markdown
-    indépendants (vérifié empiriquement sur un livre à forte densité de
+    indépendants (vérifié empiriquement sur un pdf à forte densité de
     code : 74 `lstlisting` dans `course.tex` produisaient 1562 fences dans
     `pivot.md`). Le regroupement par contiguïté (même principe que pour les
     formules, voir `_group_formula_runs`) est robuste à ce découpage
@@ -1242,11 +1242,11 @@ def extract_native_pdf(
     #
     # `course.tex` n'est JAMAIS utilise comme verite terrain quand
     # `page_range` restreint le traitement a un sous-ensemble de pages : les
-    # formules/illustrations qu'on y extrait couvrent le LIVRE ENTIER, sans
+    # formules/illustrations qu'on y extrait couvrent le PDF ENTIER, sans
     # aucun moyen de savoir laquelle de ses portions correspond a la plage
     # de pages traitee ici. Les utiliser quand meme desynchroniserait tout
     # l'appariement (bug trouve en revue de code : le pointeur de
-    # match_formula_runs_to_tex demarre a la premiere formule du LIVRE, pas
+    # match_formula_runs_to_tex demarre a la premiere formule du PDF, pas
     # de la plage) — `--pages` etant documente comme reserve au test/debug
     # (voir SKILL.md), retomber sur le comportement legacy (rasterisation/
     # extraction native) y est strictement plus sur qu'un appariement

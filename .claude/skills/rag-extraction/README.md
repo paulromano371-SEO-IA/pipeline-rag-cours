@@ -21,8 +21,8 @@ La commande est **quasi entièrement déterministe**. Elle s'appuie sur PyMuPDF.
 
 ### Utilisation
 
-- `/rag-extraction` : liste les livres à extraire et attend ton choix. Le choix se fait par numéro, ou par nom (correspondance dans `corpusdedepart/`, insensible à la casse).
-- `/rag-extraction --all` : traite les livres de la liste un par un, dans l'ordre, puis affiche un tableau récapitulatif (verdict et `document_id` par livre).
+- `/rag-extraction` : liste les pdf à extraire et attend ton choix. Le choix se fait par numéro, ou par nom (correspondance dans `corpusdedepart/`, insensible à la casse).
+- `/rag-extraction --all` : traite les pdf de la liste un par un, dans l'ordre, puis affiche un tableau récapitulatif (verdict et `document_id` par pdf).
 - `/rag-extraction <chemin_vers_pdf_condense>` : traite un seul PDF.
 
 Options de l'étape 1 :
@@ -52,7 +52,7 @@ fait une seule chose et transmet son résultat au suivant par un fichier JSON.
   formules, copie les illustrations, répare les ligatures, puis écrit le pivot.
 - **Ce qu'il écrit** : `pivot.md`, `images/`, `meta.json`, et `etape1_extraction.json`
   (compteurs et problèmes de qualité, relus par l'étape 2).
-- **Cas particulier** : si le livre est déjà extrait avec succès, il s'arrête en disant
+- **Cas particulier** : si le pdf est déjà extrait avec succès, il s'arrête en disant
   « déjà fait ». Il ne refait rien sauf avec `--force`.
 
 ### 2.2 `etape2_verification.py` : contrôler la fidélité
@@ -77,8 +77,8 @@ fait une seule chose et transmet son résultat au suivant par un fichier JSON.
 
 ### 2.4 Le cas sans argument : `lib/lister_a_extraire.py`
 
-Lancé sans PDF, il ne fait pas partie des trois étapes. Il liste les livres qui restent à
-extraire, sans rien écrire. Un livre apparaît tant que son extraction n'est pas réussie :
+Lancé sans PDF, il ne fait pas partie des trois étapes. Il liste les pdf qui restent à
+extraire, sans rien écrire. Un pdf apparaît tant que son extraction n'est pas réussie :
 pivot ou `status.json` manquant, étape `extraction` pas en `done`, ou verdict différent de `ok`.
 
 Le condensé traité est `corpuscondense/<slug>.pdf`, où `<slug>` est le nom du PDF source sans extension, passé par `_slugify_livre` (`_rag_lib/paths.py`).
@@ -91,7 +91,7 @@ Les scripts signalent les problèmes, mais ne corrigent pas le contenu du pivot.
 
 - Chaque sortie d'étape est relayée en entier, sans reformulation ni troncature. Le rapport de l'étape 3 est affiché tel quel.
 - Étape 1 ou 2 en erreur : le modèle corrige, puis relance l'étape en échec, jusqu'à ce qu'il n'y ait plus d'erreur.
-- Étape 2 en `ÉCHEC` avec « etape1_extraction.json absent » : le livre a été extrait avant cette version. Relancer l'étape 1 avec `--force`.
+- Étape 2 en `ÉCHEC` avec « etape1_extraction.json absent » : le pdf a été extrait avant cette version. Relancer l'étape 1 avec `--force`.
 - Étape 3 en `BLOQUANT` (code `2`) : le modèle corrige sans demander ton accord, uniquement les défauts signalés dans le rapport, puis relance l'étape 2, puis l'étape 3. Il continue jusqu'à ce que `pivot.md` soit `OK`.
 - Étape 3 en `OK` : l'extraction est exploitable, `/rag-nottext` peut démarrer. Le message EXTRACTION REUSSIE !!!! est affiché.
 
@@ -116,7 +116,7 @@ Les scripts signalent les problèmes, mais ne corrigent pas le contenu du pivot.
         ├── fidelity_check.py         contrôle de fidélité entre pivot.md et course.tex
         ├── correction_titres.py      correction des titres d'après course.tex
         ├── rapport.py                mise en forme du rapport final
-        └── lister_a_extraire.py      liste des livres restant à extraire (sans argument)
+        └── lister_a_extraire.py      liste des pdf restant à extraire (sans argument)
 ```
 
 Les modules partagés avec d'autres skills (chemins, `status.json`, contrôles d'entrée et de sortie, qualité, garde-fou de l'interpréteur) sont dans .claude/skills/_rag_lib/`, en dehors de ce dossier.

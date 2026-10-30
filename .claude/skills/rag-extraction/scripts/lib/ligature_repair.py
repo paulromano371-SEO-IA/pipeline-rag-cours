@@ -44,7 +44,7 @@ imbriquée en français) — même exigence de vote unanime qu'`_resolve_code`
 avant de conclure.
 
 Deux variantes supplémentaires du même défaut, vérifiées empiriquement sur
-plusieurs livres :
+plusieurs pdf :
 - des guillemets droits collés à leur contenu (`` `` ``/`` '' ``, convention
   anglaise de citation LaTeX — SANS espace, contrairement à `\og`/`\fg{}`
   qui en a toujours une) : `find_symbol_candidate_occurrences` élargit la

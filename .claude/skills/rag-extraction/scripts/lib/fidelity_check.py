@@ -333,7 +333,7 @@ def _normalize_heading(text: str) -> str:
     au rendu PDF mais qui n'existe évidemment pas dans le `\\section{...}`
     source : sans ce retrait, CHAQUE titre numéroté du PDF (donc la quasi
     totalité) se faisait à tort signaler comme absent (vérifié
-    empiriquement — un livre entier retombait à ~15% de couverture de
+    empiriquement — un pdf entier retombait à ~15% de couverture de
     titres alors qu'ils étaient tous réellement présents)."""
     text = _SECTION_NUMBER_PREFIX_RE.sub("", text.strip())
     # \texorpdfstring{rendu PDF}{texte des signets} : seul le premier argument
@@ -485,7 +485,7 @@ def run_fidelity_check(
     `page_range_active=True` (l'appelant a utilisé `--pages`) désactive de
     la même façon que `convert.py` (voir son paramètre `page_range`) toute
     comparaison à `course.tex` : `pivot.md` ne couvre alors qu'un
-    sous-ensemble de pages, jamais le livre entier, donc comparer ce
+    sous-ensemble de pages, jamais le pdf entier, donc comparer ce
     sous-ensemble à la totalité de `course.tex` inonderait le rapport de
     faux BLOQUANT (titres/blocs de code/illustrations hors de la plage
     demandée, jamais réellement manquants) — bug trouvé en revue de code."""

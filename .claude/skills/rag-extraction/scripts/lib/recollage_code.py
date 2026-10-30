@@ -97,6 +97,28 @@ def recoller_blocs_code(pivot_text: str, course_tex: str) -> tuple[str, Recollag
             continue
 
         _, debut, fin = trouve
+        # Une phrase de prose peut être remontée juste après la clôture ouvrante, avant la
+        # première ligne du bloc : la zone du bloc paraît propre, mais la clôture ne l'est pas.
+        ouverture = debut - 1
+        while ouverture >= 0 and debut - ouverture <= MAX_LIGNES_ORPHELINES and not _est_cloture(lignes[ouverture]):
+            ouverture -= 1
+        avec_prefixe = (
+            0 <= ouverture < debut - 1
+            and _est_cloture(lignes[ouverture])
+            and sum(_est_cloture(l) for l in lignes[:ouverture]) % 2 == 0
+        )
+        if avec_prefixe:
+            fermeture_ok = fin + 1 < len(lignes) and _est_cloture(lignes[fin + 1])
+            zone_sans_cloture = not any(_est_cloture(l) for l in lignes[ouverture + 1:fin + 1])
+            if not (fermeture_ok and zone_sans_cloture and _zone_valide(lignes, ouverture + 1, fin, bloc_sans_espaces)):
+                rapport.ignores.append(numero)
+                continue
+            # Les lignes de prose sortent du bloc : elles sont placées avant la clôture ouvrante.
+            prose_remontee = lignes[ouverture + 1:debut]
+            lignes[ouverture:fin + 1] = [*prose_remontee, CLOTURE, *contenu]
+            rapport.recolles.append(numero)
+            continue
+
         clotures_zone = sum(_est_cloture(l) for l in lignes[debut:fin + 1])
         deja_propre = clotures_zone == 0 and _normalize_code("\n".join(lignes[debut:fin + 1])) == attendu
         if deja_propre:
