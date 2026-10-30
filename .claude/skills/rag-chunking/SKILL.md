@@ -28,6 +28,26 @@ question en français au lieu de la restaurer. Un bloc pas encore traité par
 `/rag-nottext` (ou dont le traitement a échoué) n'a pas de description à
 fusionner : `embed_text` retombe alors sur le texte brut du bloc.
 
+## Sans argument : lister les pdfs
+
+Lance, en premier plan :
+
+```bash
+"<racine_projet>/.venv-rag/Scripts/python.exe" "<racine_projet>/.claude/skills/rag-chunking/scripts/lib/lister_a_chunker.py"
+```
+
+Liste les pdfs de `corpuscondense/` prêts pour `/rag-chunking` : `nottext`
+à `done` dans `status.json`, et `chunking` pas encore `done`. Lecture seule.
+
+Présente la liste dans la réponse, en Markdown numéroté, **hors de tout bloc de code**, avec les noms exacts.
+
+- **Sans `--all`** : attends le choix de l’utilisateur :
+  - **Numéro** : relance la liste pour avoir l’état à jour, puis prends le pdf portant ce numéro. Numéro absent : signale-le et redemande.
+  - **Nom** : cherche le pdf dans `corpuscondense/` (insensible à la casse, correspondance exacte ou sous-chaîne unique). Zéro ou plusieurs correspondances : signale-le et redemande.
+- **Avec `--all`** : Traite les pdfs de la liste **un par un, dans l’ordre**. Annonce chaque pdf en une ligne (numéro, nom, `document_id`), puis, une fois la liste épuisée, affiche un tableau récapitulatif : une ligne par pdf, avec son verdict et son `document_id`.
+
+Le pdf choisi se traite ensuite avec le PDF `corpuscondense/<nom>.pdf` (ou son `document_id`) comme argument, décrit ci-dessous.
+
 ## Interpréteur Python
 
 Tout script de ce skill se lance **uniquement** avec
@@ -66,11 +86,12 @@ Le script accepte indifféremment : le même chemin de PDF condensé passé à
 dossier `rag_data/work/<document_id>/`.
 
 Options :
+
 - `--force`
 - `--target-tokens N` (défaut 400)
 - `--overlap-blocks N` (défaut 1)
 - `--keep-structural` : conserve les sections structurelles au lieu de les
-  exclure (voir ci-dessous) — à réserver à un livre dont une section de ce
+  exclure (voir ci-dessous) — à réserver à un pdf dont une section de ce
   nom porte du vrai contenu ; le choix est enregistré dans `status.json` et
   respecté par les contrôles d'entrée de `/rag-index` et `/rag-concepts`.
 
@@ -91,7 +112,7 @@ découpage glouton fusionne la fin de la table des matières avec le début de
 la section suivante (constaté : un chunk mêlant la fin de la TOC, un numéro
 de page, le titre du chapitre 1 et son texte), que ce filtre n'aurait pas vu.
 
-Mesuré sur les deux premiers livres : ISLR 227 → 211 chunks, Bratanic
+Mesuré sur les deux premiers pdfs : ISLR 227 → 211 chunks, Bratanic
 136 → 117 ; aucun bloc code/image/formule perdu. Le script annonce les
 sections exclues (`Sections structurelles exclues ...`) et les enregistre
 dans `status.json` (`structural_sections_excluded`,
@@ -116,8 +137,9 @@ jamais accumuler ou dupliquer du contenu d'un run à l'autre.
 
 `rag_data/work/<document_id>/chunks.json` — liste de chunks (index, texte,
 texte embeddé, fil d'ariane des titres, nombre de tokens, présence de code)
+
 + `status.json` mis à jour. Toujours dans le dossier de travail centralisé,
-jamais à côté du PDF source.
+  jamais à côté du PDF source.
 
 ## Critère de sortie exploitable
 
@@ -146,6 +168,7 @@ et `--overlap-blocks 1` peut donc ne reporter aucun bloc dans ce cas précis.
 ## Après exécution
 
 Affiche un résumé structuré, dans cet ordre :
+
 1. un titre court ("Chunking terminé — `<nom du document>`")
 2. une phrase de synthèse chiffrée : nombre de chunks produits, nombre moyen
    de tokens par chunk, nombre de chunks contenant du code, proportion de
@@ -157,6 +180,7 @@ sans échec, et **aucun bloc code/image/formule sans description**
 (`DESCRIPTION_MARKER`) — leur texte brut dégraderait l'embedding.
 
 **Distinction bloquant/indicatif, fixée ici :**
+
 - **bloquant** (code de sortie `2`, étape marquée `failed`, verdict écrit
   dans `status.json`) : `chunk_markdown` produit une liste vide, `chunks.json`
   invalide (forme, index dupliqués), `n_chunks` différent du contenu du
