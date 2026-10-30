@@ -21,11 +21,11 @@ Principe :
   ( . , ( ) [ ] : ) normalement collee en Python/Cypher.
 
 Usage CLI (debogage / verification manuelle) :
-    python extraire_code_exact.py <livre.pdf> <page_debut> <page_fin> [x0 y0 x1 y1]
+    python extraire_code_exact.py <pdf.pdf> <page_debut> <page_fin> [x0 y0 x1 y1]
 
 Usage en import (dans le script que Claude ecrit pour l'etape de redaction) :
     from extraire_code_exact import extraire_code_pages
-    code = extraire_code_pages("livre.pdf", 42, 44, bbox=(70, 100, 520, 700))
+    code = extraire_code_pages("pdf.pdf", 42, 44, bbox=(70, 100, 520, 700))
 """
 import sys
 import re

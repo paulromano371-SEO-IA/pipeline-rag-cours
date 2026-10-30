@@ -1,7 +1,7 @@
 """
 Etape 1 (mecanique) : verification du calibrage du nombre de concepts
 visuels (`concepts_cles_visuels`) de chaque chapitre de `plan_cours.json`
-par rapport a la densite de figures du livre source (`nb_mentions_figure`
+par rapport a la densite de figures du pdf source (`nb_mentions_figure`
 de `structure.json`).
 
 Ce script ne corrige rien lui-meme (contrairement a controle_qualite.py sur
@@ -10,7 +10,7 @@ un nombre de mentions en nombre d'illustrations (une mention peut etre une
 capture d'ecran sans structure, ou un renvoi repete a la meme figure). Son
 role est de rendre visible, de facon mecanique et systematique, tout
 chapitre dont le nombre de concepts visuels parait bas au regard des autres
-chapitres du meme livre -- pour forcer une relecture ciblee plutot qu'un
+chapitres du meme pdf -- pour forcer une relecture ciblee plutot qu'un
 oubli silencieux.
 
 Prerequis : chaque chapitre de plan_cours.json doit porter un champ
@@ -64,7 +64,7 @@ def main():
         })
 
     # Ratio illustrations / mentions, uniquement sur les chapitres avec mentions > 0,
-    # pour reperer les chapitres nettement sous-dotes par rapport a la mediane du livre.
+    # pour reperer les chapitres nettement sous-dotes par rapport a la mediane du pdf.
     ratios = [
         l["nb_concepts_visuels"] / l["somme_nb_mentions_figure"]
         for l in lignes
@@ -78,7 +78,7 @@ def main():
             if l["somme_nb_mentions_figure"] in (None, 0):
                 continue
             ratio = l["nb_concepts_visuels"] / l["somme_nb_mentions_figure"]
-            # Seuil : moins de 40% de la mediane du livre ET au moins 2 fois moins
+            # Seuil : moins de 40% de la mediane du pdf ET au moins 2 fois moins
             # de visuels que ce que la mediane suggererait -- evite de signaler des
             # chapitres courts ou peu figures a raison.
             if ratio < 0.4 * mediane_ratio and l["nb_concepts_visuels"] <= max(1, round(mediane_ratio * l["somme_nb_mentions_figure"] * 0.5)):

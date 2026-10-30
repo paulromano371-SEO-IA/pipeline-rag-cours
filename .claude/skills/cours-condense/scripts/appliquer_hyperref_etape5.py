@@ -2,7 +2,7 @@
 Etape 5 (mecanique), regle 5 : insere dans course.tex, une seule fois et
 juste avant \\begin{document}, le bloc fixe hyperref/cleveref. Meme
 categorie que les blocs figes de l'etape 4 (appliquer_preambule_etape4.py) :
-zero variation d'un livre a l'autre hormis le titre du cours, donc jamais
+zero variation d'un pdf a l'autre hormis le titre du cours, donc jamais
 retape a la main.
 
 `\\usepackage{cleveref}` doit venir juste apres hyperref (contrainte propre
@@ -41,7 +41,7 @@ _LATEX_SPECIAUX_RE = re.compile("|".join(re.escape(c) for c in _LATEX_SPECIAUX))
 
 def _escape_latex(s):
     """Echappe les caracteres speciaux LaTeX dans un titre fourni en argument
-    (jamais retape a la main dans course.tex) : un titre de livre contenant
+    (jamais retape a la main dans course.tex) : un titre de pdf contenant
     par ex. un '&' ou un '%' romprait sinon la compilation."""
     return _LATEX_SPECIAUX_RE.sub(lambda m: _LATEX_SPECIAUX[m.group()], s)
 

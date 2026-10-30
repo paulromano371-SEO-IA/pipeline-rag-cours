@@ -1,13 +1,14 @@
-# cours-condense
+# cours-condense : génération d'un cours condensé à partir d'un pdf
 
-Transforme un livre technique complet (PDF) en support de cours condensé en français, compilé en PDF via LaTeX.
+Transforme un pdf technique complet (PDF) en support de cours condensé en français, compilé en PDF via LaTeX.
 
 ## Utilisation
 
-- `/cours-condense <chemin_vers_livre.pdf>` : lance le pipeline complet sur ce livre.
+- `/cours-condense <chemin_vers_livre.pdf>` : lance le pipeline complet sur ce pdf.
+
 - `/cours-condense` (sans argument) : liste les livres de `corpusdedepart/` qui n'ont pas encore été condensés. Voir la section « Hors flux principal ».
 
-- Lecture intégrale : tous les chapitres du plan sont lus en entier, quelle que soit la taille du livre. Il n'y a aucune question à ce sujet.
+- Lecture intégrale : tous les chapitres du plan sont lus en entier, quelle que soit la taille du pdf. Il n'y a aucune question à ce sujet.
 
 Les scripts se lancent avec `.venv-rag/Scripts/python.exe` (et non le Python système). Chaque étape est lancée en premier plan (foreground), jamais en arrière-plan ni en parallèle.
 
@@ -22,17 +23,17 @@ Chaque étape a deux niveaux :
 
 Une étape a besoin des fichiers produits par la précédente. Si `EtapeN.py` renvoie une erreur, la fiche `SKILL.md` demande de corriger le problème par le modèle, puis de relancer l'étape.
 
-| Étape | Script principal | Rôle |
-|---|---|---|
-| 0 | `Etape0_verifier_deja_condense.py` | Vérifie que le livre n'a pas déjà été condensé (lecture seule) |
-| 1 | `Etape1.py` | Établit le plan du cours (`plan_cours.json`) |
-| 2 | `Etape2.py` | Crée les illustrations |
-| 3 | `Etape3.py` | Rédige le cours (`course.tex`) |
-| 4 | `Etape4.py` | Met en forme le LaTeX |
-| 5 | `Etape5.py` | Contrôle la qualité avant compilation |
-| 6 | `Etape6.py` | Compile le PDF et le publie dans `corpuscondense/` |
+| Étape | Script principal                   | Rôle                                                         |
+| ----- | ---------------------------------- | ------------------------------------------------------------ |
+| 0     | `Etape0_verifier_deja_condense.py` | Vérifie que le pdf n'a pas déjà été condensé (lecture seule) |
+| 1     | `Etape1.py`                        | Établit le plan du cours (`plan_cours.json`)                 |
+| 2     | `Etape2.py`                        | Crée les illustrations                                       |
+| 3     | `Etape3.py`                        | Rédige le cours (`course.tex`)                               |
+| 4     | `Etape4.py`                        | Met en forme le LaTeX                                        |
+| 5     | `Etape5.py`                        | Contrôle la qualité avant compilation                        |
+| 6     | `Etape6.py`                        | Compile le PDF et le publie dans `corpuscondense/`           |
 
-Les données de travail d'un livre sont rangées dans `rag_data/courscondense/<slug>/`. Le `<slug>` est le nom du livre en minuscules, sans accents, avec des `_` à la place des espaces et de la ponctuation.
+Les données de travail d'un pdf sont rangées dans `rag_data/courscondense/<slug>/`. Le `<slug>` est le nom du pdf en minuscules, sans accents, avec des `_` à la place des espaces et de la ponctuation.
 
 ## Détail par étape
 
@@ -40,7 +41,8 @@ Codes de sortie des scripts `EtapeN.py` : `0` réussi ; `1` échec après plusie
 
 ### Étape 0 : vérification
 
-**`Etape0_verifier_deja_condense.py`** : indique si le livre a déjà été condensé.
+**`Etape0_verifier_deja_condense.py`** : indique si le pdf a déjà été condensé.
+
 - Entrée : le chemin du PDF source.
 - Fait : regarde si `corpuscondense/<slug>.pdf` existe, s'il y a un PDF dans `rag_data/courscondense/<slug>/out/`, et l'état de l'étape 6 dans `status.json`.
 - Écrit : rien.
@@ -49,6 +51,7 @@ Codes de sortie des scripts `EtapeN.py` : `0` réussi ; `1` échec après plusie
 ### Étape 1 : plan du cours
 
 **`Etape1.py`** : orchestre l'étape.
+
 - Entrée : le chemin du PDF.
 - Fait : lance Claude avec `prompt_etape1.md`, puis vérifie qu'un `plan_cours.json` valide existe, avec une liste `chapitres` non vide.
 - Écrit (via Claude) : `plan_cours.json`.
@@ -60,7 +63,7 @@ Scripts lancés par Claude, dans l'ordre :
    - Entrée : le PDF et le dossier `extraction`.
    - Écrit : `extraction/structure.json` (table des matières, nombre de pages, mentions de figures, pages probablement de code) et un fichier `extraction/pages/page_NNNN.txt` par page.
 3. **`concatener_pages.py`** : assemble les pages d'un lot en un seul fichier, avec un marqueur `=== FIN PAGE N ===` après chaque page.
-   - Entrée : le dossier du livre, la page de début et la page de fin.
+   - Entrée : le dossier du pdf, la page de début et la page de fin.
    - Écrit : `extraction/lot_<debut>_<fin>.txt`.
    - Code `1` si la plage de pages est invalide.
 4. **`verifier_plan_cours.py`** : contrôle la structure du plan (champs obligatoires, pages valides, chapitres dans l'ordre, sans chevauchement).
@@ -73,6 +76,7 @@ Scripts lancés par Claude, dans l'ordre :
 ### Étape 2 : illustrations
 
 **`Etape2.py`** : orchestre l'étape.
+
 - Entrée : le chemin du PDF. Exige `plan_cours.json`.
 - Fait : lance Claude avec `prompt_etape2.md`, puis relance `verifier_illustrations.py`, qui doit renvoyer `"pret": true`.
 - Écrit (via Claude) : les illustrations PNG dans `illustrations/`, et un script `scripts/illustrations_chapitreN.py` par chapitre.
@@ -81,21 +85,22 @@ Scripts utilisés, dans l'ordre :
 
 1. **`illustration_utils.py`** : boîte à outils importée par les scripts d'illustration. Elle calcule la taille de la figure (`suggested_figsize`) et vérifie qu'aucun élément ne chevauche un autre (`verify_no_overlap`). Ne crée aucun fichier.
 2. **`verifier_illustrations.py`** : contrôle les illustrations.
-   - Entrée : le dossier du livre et `plan_cours.json`.
+   - Entrée : le dossier du pdf et `plan_cours.json`.
    - Vérifie : une illustration par concept clé, le nom `chNN_concept.png`, et les seules couleurs autorisées (`#1a365d`, `#c25e00`) dans les scripts.
    - Ne modifie rien ; affiche un rapport JSON.
 
 ### Étape 3 : rédaction
 
 **`Etape3.py`** : orchestre l'étape.
+
 - Entrée : le chemin du PDF. Exige `plan_cours.json`.
 - Fait : lance Claude avec `prompt_etape3.md`, puis relance `verifier_glossaire.py` et `verifier_structure_course_tex.py`. Les deux doivent renvoyer `"pret": true`.
-- Écrit (via Claude) : `course.tex` et `glossaire.json`. Claude écrit aussi, dans le dossier du livre, un script `scripts/ecrire_course_tex.py` qui ajoute le texte de chaque chapitre à `course.tex`.
+- Écrit (via Claude) : `course.tex` et `glossaire.json`. Claude écrit aussi, dans le dossier du pdf, un script `scripts/ecrire_course_tex.py` qui ajoute le texte de chaque chapitre à `course.tex`.
 
 Scripts utilisés, dans l'ordre :
 
 1. **`initialiser_course_tex.py`** : écrit le squelette de `course.tex` (classe, titre, `\maketitle`, `\tableofcontents`, `\newpage`).
-   - Entrée : le dossier du livre et le titre du cours.
+   - Entrée : le dossier du pdf et le titre du cours.
    - Refuse d'écraser un `course.tex` existant, sauf avec `--force`.
 2. **`extraire_code_exact.py`** : extrait le code source d'un PDF en gardant les espaces et les lignes vides.
    - Entrée : le PDF, les pages, et une zone facultative.
@@ -108,6 +113,7 @@ Scripts utilisés, dans l'ordre :
 ### Étape 4 : mise en forme
 
 **`Etape4.py`** : orchestre l'étape.
+
 - Entrée : le chemin du PDF. Exige `course.tex`.
 - Fait : lance Claude avec `prompt_etape4.md`, vérifie que le bloc de mise en forme et `\begin{document}` / `\end{document}` sont présents, puis relance les deux scripts ci-dessous.
 - Écrit (via Claude) : modifications de `course.tex`.
@@ -124,6 +130,7 @@ Relancés par `Etape4.py` pour validation :
 ### Étape 5 : contrôle qualité
 
 **`Etape5.py`** : orchestre l'étape.
+
 - Entrée : le chemin du PDF. Exige `course.tex`.
 - Fait : lance Claude avec `prompt_etape5.md`, puis vérifie que `controle_qualite.py` renvoie `"pret_a_compiler": true` et que `\usepackage{cleveref}` est présent.
 - Écrit (via Claude) : corrections dans `course.tex`.
@@ -140,6 +147,7 @@ Scripts utilisés, dans l'ordre :
 ### Étape 6 : compilation et publication
 
 **`Etape6.py`** : orchestre l'étape.
+
 - Entrée : le chemin du PDF. Exige `course.tex`.
 - Fait : lance Claude avec `prompt_etape6.md`, puis vérifie qu'un PDF existe dans `out/` et dans `corpuscondense/<slug>.pdf`.
 - Au rendu final, affiche `COMPILATION REUSSIE !!!!`.
@@ -151,7 +159,7 @@ Scripts utilisés, dans l'ordre :
    - Entrée : le chemin de `course.tex` et le nom du PDF final.
    - Écrit : `out/<nom>.pdf`. Supprime les fichiers auxiliaires (`.aux`, `.log`, `.toc`, `.out`).
 2. **`publish_condense.py`** : copie le PDF le plus récent de `out/` vers `corpuscondense/<slug>.pdf`.
-   - Entrée : le dossier du livre.
+   - Entrée : le dossier du pdf.
    - Code `1` si aucun PDF n'est trouvé.
 
 ## Hors flux principal
@@ -170,7 +178,7 @@ cours-condense/
 ├── README.md                               # ce fichier
 └── scripts/
     ├── Etape0_lister_non_condenses.py      # sans argument : liste des livres à condenser
-    ├── Etape0_verifier_deja_condense.py    # étape 0 : le livre est-il déjà condensé ?
+    ├── Etape0_verifier_deja_condense.py    # étape 0 : le pdf est-il déjà condensé ?
     ├── Etape1.py                           # étape 1 : plan du cours
     ├── Etape2.py                           # étape 2 : illustrations
     ├── Etape3.py                           # étape 3 : rédaction
@@ -208,7 +216,7 @@ cours-condense/
     └── lib/
         ├── commun.py                       # socle commun : appels claude, modèle, chemins, vérifications
         ├── session_claude.py               # client claude -p à session (importé par commun.py)
-        ├── slug.py                         # calcul du slug du livre
+        ├── slug.py                         # calcul du slug du pdf
         ├── calibrage.py                    # borne du nombre de visuels (non appelé)
         ├── concatener_pages.py             # copie de concatener_pages.py (non appelé)
         ├── extraire_code_exact.py          # copie de extraire_code_exact.py (non appelé)

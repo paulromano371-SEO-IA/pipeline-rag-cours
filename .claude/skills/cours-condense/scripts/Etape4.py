@@ -19,7 +19,7 @@ MARQUEUR_PREAMBULE = r"\lstdefinestyle{pythonstyle}"
 
 
 def lancer_script(script: str, dossier: Path) -> subprocess.CompletedProcess:
-    """Lance un script de l'étape 4 sur le dossier du livre (ces scripts sont idempotents)."""
+    """Lance un script de l'étape 4 sur le dossier du pdf (ces scripts sont idempotents)."""
     return subprocess.run(
         [sys.executable, str(SCRIPTS_DIR / script), str(dossier)],
         capture_output=True, text=True, encoding="utf-8",

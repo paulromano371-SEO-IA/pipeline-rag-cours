@@ -37,8 +37,8 @@ SCRIPTS_DIR = Path(__file__).resolve().parent.parent
 LIB_DIR = SCRIPTS_DIR / "lib"
 PROMPTS_DIR = SCRIPTS_DIR / "prompts"
 RACINE_PROJET = next(p for p in SCRIPTS_DIR.parents if (p / ".claude" / "skills" / "_rag_lib").is_dir())
-# Verrou du pipeline : un par livre, dans son dossier de travail (rag_data/courscondense/<slug>/).
-# Une étape longue à la fois POUR UN LIVRE ; deux livres différents peuvent tourner en même temps.
+# Verrou du pipeline : un par pdf, dans son dossier de travail (rag_data/courscondense/<slug>/).
+# Une étape longue à la fois POUR UN PDF ; deux livres différents peuvent tourner en même temps.
 # Lu aussi par le hook block_rag_background.py.
 NOM_VERROU = ".etape_en_cours.json"
 
@@ -100,8 +100,8 @@ def pid_vivant(pid: int) -> bool:
 def lancer_avec_verrou(numero: str, fonction) -> int:
     """Exécute `fonction()` (une étape longue) en posant le verrou du pipeline.
 
-    Le verrou est celui du livre : `sys.argv[1]` est le dossier de travail du livre (`<nom_du_livre>`).
-    Refuse de démarrer si un autre processus tient déjà le verrou de CE livre (PID vivant).
+    Le verrou est celui du pdf : `sys.argv[1]` est le dossier de travail du pdf (`<nom_du_livre>`).
+    Refuse de démarrer si un autre processus tient déjà le verrou de CE pdf (PID vivant).
     Un verrou orphelin (PID mort) est ignoré. Le verrou est retiré à la sortie, même en cas d'erreur.
     """
     verrou = Path(sys.argv[1]).resolve() / NOM_VERROU

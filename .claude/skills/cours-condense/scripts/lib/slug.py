@@ -1,5 +1,5 @@
 """
-Slugification du nom d'un livre, partagee par les scripts de cours-condense.
+Slugification du nom d'un pdf, partagee par les scripts de cours-condense.
 
 Regle (documentee dans SKILL.md) : minuscules, sans accents, espaces et
 ponctuation -> '_'. Un seul point de verite pour cette transformation.

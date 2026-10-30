@@ -1,10 +1,10 @@
 """
-Verifie si un livre source a deja ete condense par /cours-condense.
+Verifie si un pdf source a deja ete condense par /cours-condense.
 
 Lecture seule : ce script ne cree, ne modifie et ne supprime rien.
 
 Usage:
-    python verifier_deja_condense.py <livre.pdf> [<racine_projet>]
+    python verifier_deja_condense.py <pdf.pdf> [<racine_projet>]
 
 <racine_projet> est optionnel ; par defaut, la racine deduite de
 l'emplacement du script (.claude/skills/cours-condense/scripts/).

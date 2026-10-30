@@ -5,7 +5,7 @@ Le dossier de travail de /cours-condense est redirige (par instruction
 d'invocation, /cours-condense lui-meme n'est pas modifie) vers
 rag_data/courscondense/<slug>/ plutot que la racine du projet. A l'interieur,
 le skill cree son propre sous-dossier dont il choisit le nom (sa propre
-slugification du titre du livre, potentiellement differente de <slug>) —
+slugification du titre du pdf, potentiellement differente de <slug>) —
 observe en pratique sur un run reel (voir RAG-PIPELINE-ARCHITECTURE.md,
 section 16bis). On ne presuppose donc jamais la profondeur exacte de
 out/*.pdf : recherche recursive, PDF le plus recent retenu en cas de

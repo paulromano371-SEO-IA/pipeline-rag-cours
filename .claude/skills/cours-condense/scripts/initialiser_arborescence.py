@@ -1,5 +1,5 @@
 """
-Racine du pipeline cours-condense (mecanique) : slugifie le nom du livre et
+Racine du pipeline cours-condense (mecanique) : slugifie le nom du pdf et
 cree l'arborescence de travail sous rag_data/courscondense/<slug>/.
 
 Extrait de la logique de slugification qui etait auparavant refaite a la
@@ -9,7 +9,7 @@ l'autre. Ici, un seul point de verite pour le nom de dossier, jamais
 recalcule differemment en cours de session.
 
 Usage:
-    python initialiser_arborescence.py <livre.pdf> [<racine_projet>]
+    python initialiser_arborescence.py <pdf.pdf> [<racine_projet>]
 
 <racine_projet> est optionnel, par defaut le repertoire courant (le pipeline
 est cense etre invoque depuis la racine du projet). L'arborescence est

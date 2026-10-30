@@ -4,7 +4,7 @@ course.tex, une seule fois et juste avant \\begin{document}, les blocs LaTeX
 fixes de mise en forme -- listings, ligatures/langue/encadres, tableaux,
 anti-coupures (partie section/subsection), marges/titres de chapitre.
 
-Ce sont des blocs a zero variation d'un livre a l'autre : jusqu'ici retapes
+Ce sont des blocs a zero variation d'un pdf a l'autre : jusqu'ici retapes
 ou recopies a la main dans course.tex, avec un risque de faute de frappe
 deja concretise cette session -- une correction d'accents mal ciblee a
 change `a4paper` en `a4paper` accentue et `1a365d` en `1a365d` accentue

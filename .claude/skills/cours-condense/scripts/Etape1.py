@@ -1,4 +1,4 @@
-"""Étape 1 de /cours-condense : cartographie du livre + plan condensé.
+"""Étape 1 de /cours-condense : cartographie du pdf + plan condensé.
 
 Un seul appel `claude -p` avec le prompt complet `prompts/prompt_etape1.md`.
 Usage : python Etape1.py <chemin_du_livre.pdf>

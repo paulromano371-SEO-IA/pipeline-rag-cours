@@ -11,7 +11,7 @@ ensuite elaborer le plan de cours condense sans avoir a relire le PDF brut :
   police a chasse fixe (Courier/Consolas/Mono/etc.) sur la page.
 
 Usage:
-    python extraire_structure.py <livre.pdf> <dossier_sortie>
+    python extraire_structure.py <pdf.pdf> <dossier_sortie>
 
 Produit :
     <dossier_sortie>/structure.json

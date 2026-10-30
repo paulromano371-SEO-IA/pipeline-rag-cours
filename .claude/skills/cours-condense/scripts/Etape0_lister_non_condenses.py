@@ -10,11 +10,11 @@ Usage (sans argument uniquement) :
 l'emplacement du script (.claude/skills/cours-condense/scripts/).
 
 La liste est triee par nom de fichier : le meme numero designe donc
-toujours le meme livre d'un appel a l'autre.
+toujours le meme pdf d'un appel a l'autre.
 
 Sortie stable, reparsable :
     NB_NON_CONDENSES: <nombre>
-    <numero>: <nom_du_fichier.pdf>   (une ligne par livre, numerotee a partir de 1)
+    <numero>: <nom_du_fichier.pdf>   (une ligne par pdf, numerotee a partir de 1)
 
 Le chemin complet se reconstruit a partir de corpusdedepart/ + ce nom.
 """

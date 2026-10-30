@@ -8,7 +8,7 @@ defaut (regle 5 elle-meme).
 C'est la regle dont l'omission (jamais appliquee de tout un cours cette
 session, alors que sa moitie "snippet fixe" avait ete correctement inseree
 dans le preambule) a produit des blocs de code coupes en deux pages dans le
-PDF livre. Compter des lignes et comparer a un seuil ne demande aucun
+PDF pdf. Compter des lignes et comparer a un seuil ne demande aucun
 jugement editorial : plus aucune raison que cette regle depende de la
 memoire du redacteur pendant une session longue etalee sur plusieurs
 chapitres.

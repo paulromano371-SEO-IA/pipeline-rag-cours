@@ -1,21 +1,21 @@
 ---
 name: cours-condense
 description: >-
-  Génère un support de cours condensé en français (PDF via LaTeX) à partir d'un livre
+  Génère un support de cours condensé en français (PDF via LaTeX) à partir d'un pdf
   technique complet en PDF, avec illustrations vectorielles originales et code source
   préservé à l'identique.
   Usage: /cours-condense <chemin_vers_livre.pdf>
-  Déclenche aussi sur "condense ce livre en cours", "crée un support de cours à partir de ce PDF".
+  Déclenche aussi sur "condense ce pdf en cours", "crée un support de cours à partir de ce PDF".
 ---
 
-# cours-condense — Cours condensé à partir d'un livre
+# cours-condense — Cours condensé à partir d'un pdf
 
 Pipeline en étapes numérotées. Chaque étape est un script `scripts/EtapeX.py`
 lancé par cette fiche, dans l'ordre, sans étape implicite. Les étapes qui appellent
 Claude (`claude -p`) ont leur prompt dans `scripts/prompts/`. Le socle commun est `scripts/lib/commun.py` ; les outils partagés sont dans `scripts/lib/`.
 
 **Règle d'or de reprise de la version originale : ne jamais fixer de longueur cible a priori.** 
-Le plan, la rédaction et la compression découlent uniquement du contenu réellement essentiel du livre — jamais d'un ratio de pages ou d'un nombre de chapitres décidé d'avance.
+Le plan, la rédaction et la compression découlent uniquement du contenu réellement essentiel du pdf — jamais d'un ratio de pages ou d'un nombre de chapitres décidé d'avance.
 
 ## Règle absolue : accentuation française correcte
 
@@ -32,9 +32,9 @@ Le fichier LaTeX généré déclare déjà `\usepackage[utf8]{inputenc}`, `\usep
 
 `/cours-condense <chemin_vers_livre.pdf>`
 
-- **Lecture intégrale, toujours.** Que le livre fasse 50 ou 1000 pages, tous les chapitres du plan sont lus et traités en entier, sans exception. Ne demande **jamais** à l'utilisateur s'il veut lire le livre en entier ou s'arrêter à certains chapitres, cette question ne se pose pas, la réponse est toujours oui. C'est une instruction permanente de ce skill, pas une option à reconfirmer à chaque lancement.
+- **Lecture intégrale, toujours.** Que le pdf fasse 50 ou 1000 pages, tous les chapitres du plan sont lus et traités en entier, sans exception. Ne demande **jamais** à l'utilisateur s'il veut lire le pdf en entier ou s'arrêter à certains chapitres, cette question ne se pose pas, la réponse est toujours oui. C'est une instruction permanente de ce skill, pas une option à reconfirmer à chaque lancement.
 
-### Sans argument : choix d'un livre à condenser ( aucun appel `claude -p` )
+### Sans argument : choix d'un pdf à condenser ( aucun appel `claude -p` )
 
 `/cours-condense` lancé **sans argument** ne démarre aucune étape. Il exécute uniquement :
 
@@ -46,7 +46,7 @@ Le script liste, numérotés, les noms des livres de `corpusdedepart/` absents d
 
 - Si l'utilisateur répond par un numéro : relance le même script (sans argument) pour retrouver la liste à jour, prends le nom de ce numéro, et lance le pipeline complet sur `corpusdedepart/<nom>`, exactement comme si son chemin avait été donné en argument (Étape 0 puis suite).
 - Si le numéro n'existe pas dans la liste : signale-le et redemande, sans rien lancer.
-- Si `NB_NON_CONDENSES: 0` : indique qu'il n'y a plus aucun livre à condenser, et ne lance rien.
+- Si `NB_NON_CONDENSES: 0` : indique qu'il n'y a plus aucun pdf à condenser, et ne lance rien.
 
 ## Interpréteur Python
 
@@ -73,7 +73,7 @@ tour de conversation, jamais « pour économiser du contexte ».
 ## Règle d'exécution (déterminisme)
 
 Ce pipeline doit se dérouler **de façon identique à chaque lancement**, quel 
-que soit le livre traité. Sont interdits, à toutes les étapes, sauf demande 
+que soit le pdf traité. Sont interdits, à toutes les étapes, sauf demande 
 explicite et ponctuelle de l'utilisateur dans le message qui déclenche la commande :
 
 - **Déléguer à un sous-agent** (outil `Agent`) la lecture des pages extraites, 
@@ -83,7 +83,7 @@ explicite et ponctuelle de l'utilisateur dans le message qui déclenche la comma
   découpe en lots de lecture plus petits, mais reste le seul lecteur/rédacteur.
 - **Toute tâche en arrière-plan ou planifiée** (`ScheduleWakeup`, agents async, etc.) pour une étape du pipeline lui-même.
 
-Chaque étape s'exécute avec le même type d'appels d'un livre à l'autre : 
+Chaque étape s'exécute avec le même type d'appels d'un pdf à l'autre : 
 `Bash` pour lancer les scripts utilitaires, 
 `Read` pour lire `structure.json`/les pages/`plan_cours.json`, 
 `Write` le script d'écriture en mode append pour produire `course.tex`. 
@@ -92,7 +92,7 @@ Chaque étape s'exécute avec le même type d'appels d'un livre à l'autre :
 
 ## Arborescence de travail
 
-Pour un livre `chemin/vers/Mon Livre.pdf`, `initialiser_arborescence.py` calcule un slug (minuscules, sans accents, espaces -> `_`, ex. `mon_livre`) et crée le dossier de travail `rag_data/courscondense/<slug>/` à la racine du projet (jamais directement à la racine du projet — cette commande doit pouvoir s'executer seule, sans dépendre d'un orchestrateur, tout en gardant les données générées centralisées).
+Pour un pdf `chemin/vers/Mon Pdf.pdf`, `initialiser_arborescence.py` calcule un slug (minuscules, sans accents, espaces -> `_`, ex. `mon_livre`) et crée le dossier de travail `rag_data/courscondense/<slug>/` à la racine du projet (jamais directement à la racine du projet — cette commande doit pouvoir s'executer seule, sans dépendre d'un orchestrateur, tout en gardant les données générées centralisées).
 
 **`<nom_du_livre>` dans tout ce fichier désigne ce dossier de travail complet (`rag_data/courscondense/<slug>/`), jamais le slug seul.** C'est la valeur `DOSSIER:` affichée par `initialiser_arborescence.py`, pas sa valeur `SLUG:`  — toutes les commandes ci-dessous qui utilisent `<nom_du_livre>/...` comme préfixe de chemin (`"<nom_du_livre>/extraction"`, `"<nom_du_livre>/course.tex"`, etc.) supposent ce chemin complet ; un slug nu casserait ces appels dès le premier script de l'étape 1.
 
@@ -102,12 +102,12 @@ Contenu de ce dossier de travail :
 <nom_du_livre>/
   extraction/
     structure.json          # sortie de extraire_structure.py
-    pages/page_0001.txt ...  # texte brut de chaque page du livre
+    pages/page_0001.txt ...  # texte brut de chaque page du pdf
   illustrations/               # PNG générés (une par concept clé du plan)
   plan_cours.json                # plan condensé (étape 1)
   glossaire.json                  # cohérence terminologique (étape 3)
   course.tex                       # cours LaTeX (étapes 3-4)
-  scripts/                          # scripts Python générés pour CE livre
+  scripts/                          # scripts Python générés pour CE pdf
   out/                                # PDF final livré à l'utilisateur 
 ```
 
@@ -117,7 +117,7 @@ Déclenchement : si une étape sort en erreur (code ≠ 0), il faut faire corrig
 
 ## Format de compte-rendu
 
-Ce format s'applique **quel que soit le livre traité** — il décrit une structure de compte-rendu, jamais un contenu figé.
+Ce format s'applique **quel que soit le pdf traité** — il décrit une structure de compte-rendu, jamais un contenu figé.
 
 1. **Pendant le travail** : après chaque action significative (exécution d'un ou plusieurs scripts, lecture d'un lot de fichiers, écriture d'un fichier), affiche une seule ligne courte au fil de l'eau décrivant l'action et son résultat immédiat (ex. « Exécute N commande(s), lu `<fichier>` », « Chapitre X lu intégralement », « Crée `<fichier>`+L-S »). Pas de paragraphe explicatif à chaque étape intermédiaire — la ligne suffit.
 2. **À la fin de chaque étape** (sans pause ni question de validation), affiche un résumé structuré comprenant, dans cet ordre :
@@ -125,7 +125,7 @@ Ce format s'applique **quel que soit le livre traité** — il décrit une struc
    - une ou deux phrases de synthèse sur ce qui a été fait et comment (méthode suivie, fidélité à la source) ;
 3. **Au rendu final** (étape 6) : Afficher le message COMPILATION REUSSIE !!!!
 
-Le contenu de ces comptes-rendus (nombres, titres, décisions) dépend entièrement du livre traité — seule la structure ci-dessus est fixe.
+Le contenu de ces comptes-rendus (nombres, titres, décisions) dépend entièrement du pdf traité — seule la structure ci-dessus est fixe.
 
 ---
 
@@ -141,7 +141,7 @@ Lecture seule : ce script ne crée, ne modifie et ne supprime rien.
 
 - Code `0` (`DEJA_CONDENSE`) : **arrêt immédiat**. N'exécute aucune autre étape et n'écris aucun fichier. Affiche exactement ce message, en remplaçant `<PDF>` par la valeur `PDF_PUBLIE` affichée par le script (ou, si elle vaut `absent`, par la valeur `PDF_COMPILE`) :
   
-  > Ce livre a déjà été condensé (`<PDF>`). /cours-condense s'arrête ici ; aucune étape n'a été lancée.
+  > Ce pdf a déjà été condensé (`<PDF>`). /cours-condense s'arrête ici ; aucune étape n'a été lancée.
   
   Si le script affiche une ligne `INCOHERENCE:`, reporte-la aussi dans ta réponse, sans la corriger.
 

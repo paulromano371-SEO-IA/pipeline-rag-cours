@@ -21,11 +21,11 @@ Principe :
   ( . , ( ) [ ] : ) normalement collee en Python/Cypher.
 
 Usage CLI (debogage / verification manuelle) :
-    python extraire_code_exact.py <livre.pdf> <page_debut> <page_fin> [x0 y0 x1 y1]
+    python extraire_code_exact.py <pdf.pdf> <page_debut> <page_fin> [x0 y0 x1 y1]
 
 Usage en import (dans le script que Claude ecrit pour l'etape de redaction) :
     from extraire_code_exact import extraire_code_pages
-    code = extraire_code_pages("livre.pdf", 42, 44, bbox=(70, 100, 520, 700))
+    code = extraire_code_pages("pdf.pdf", 42, 44, bbox=(70, 100, 520, 700))
 """
 import sys
 import re
@@ -112,7 +112,7 @@ def _strip_punct_spacing(line):
 def _sans_numero_de_ligne(chars):
     """Retire le numéro de ligne imprimé en marge (1 à 3 chiffres, suivi d'un espace visible).
 
-    Le livre numérote les lignes des listings : ce numéro n'est pas du code.
+    Le pdf numérote les lignes des listings : ce numéro n'est pas du code.
     Un chiffre collé au code (« 2**8 », « 0.5 ») n'est pas retiré.
     """
     n = 0

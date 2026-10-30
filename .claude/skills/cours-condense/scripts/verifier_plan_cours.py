@@ -9,11 +9,11 @@ coherence chronologique du plan lui-meme :
   - champs obligatoires presents et du bon type pour chaque chapitre ;
   - pages_source valide (borne_debut <= borne_fin, dans [1, nb_pages]) ;
   - chapitres strictement ordonnes et sans chevauchement de pages source
-    entre eux (la regle "respecte strictement la chronologie du livre
+    entre eux (la regle "respecte strictement la chronologie du pdf
     original" de l'etape 1 devient ici verifiable plutot que laissee a
     l'auto-discipline).
 
-N'exige PAS une couverture totale du livre sans le moindre trou : une
+N'exige PAS une couverture totale du pdf sans le moindre trou : une
 preface, une table des matieres, des references ou un index legitimement
 exclus du plan condense creent des trous attendus. Un chevauchement de
 pages entre deux chapitres, en revanche, n'est jamais legitime -- deux

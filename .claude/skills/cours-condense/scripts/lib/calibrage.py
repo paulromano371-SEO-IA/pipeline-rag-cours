@@ -1,4 +1,4 @@
-"""Borne des concepts visuels d'un chapitre, tirée du livre source (pas d'une cible de longueur).
+"""Borne des concepts visuels d'un chapitre, tirée du pdf source (pas d'une cible de longueur).
 
 Partagée par l'étape 1.3 (consigne donnée au planificateur) et l'étape 1.5 (contrôle bilatéral) : une
 seule définition de la borne, pour que la consigne et le contrôle ne divergent jamais.
