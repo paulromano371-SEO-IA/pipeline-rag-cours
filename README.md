@@ -1,5 +1,7 @@
 # ![](/images/logo.png)
 
+[![licence](https://img.shields.io/badge/licence-Apache%202.0-blue.svg)](LICENSE)
+
                  Rag4Wordpress est né de l'idée de rendre accessible l'apprentissage de l'IA.
 
 ![](/images/1ereimage.png)
@@ -7,6 +9,31 @@
 Cette solution transforme des pdfs techniques complexes en **supports de cours condensé pédagogiques de grande qualité et en français**, puis ingère ces supports dans une base de connaissance interrogeable : recherche vectorielle (RAG classique)  et graphe de concepts (GraphRAG), le tout via une série de [skills Claude Code](https://github.com/paulromano371-SEO-IA/pipeline-rag-cours/tree/main/.claude/skills) enchaînés.
 
 **Objectif** : vulgariser des pdfs techniques complexes pour en tirer des contenus web très pédagogiques et uniques. Le corpus condensé et ingéré est la seule source de faits : chaque article est rédigé à partir de ce que contiennent réellement les supports condensés, puis envoyé sur un site WordPress.
+
+## Sommaire
+
+- [Vue d'ensemble du pipeline](#vue-ensemble)
+- [Les 13 étapes](#etapes)
+  - [1. `/cours-condense`](#etape-1)
+  - [2. `/rag-extraction`](#etape-2)
+  - [3. `/rag-nottext`](#etape-3)
+  - [4. `/rag-chunking`](#etape-4)
+  - [5. `/rag-index`](#etape-5)
+  - [6. `/rag-concepts`](#etape-6)
+  - [7. `/rag-graphe`](#etape-7)
+  - [8. `/rag-integrity`](#etape-8)
+  - [9. `/expressions-article`](#etape-9)
+  - [10. `/create-content`](#etape-10)
+  - [11. `/publish-content`](#etape-11)
+  - [12. `/maillage`](#etape-12)
+  - [13. `/publish-maillage`](#etape-13)
+- [Orchestrateur `/ragpipeline`](#orchestrateur)
+- [Outils d'analyse et d'exploration](#outils)
+- [Organisation des données](#organisation-des-donnees)
+- [Installation](#installation)
+- [Exploitation dans Claude Desktop](#exploitation)
+
+<a id="vue-ensemble"></a>
 
 ## Vue d'ensemble du pipeline
 
@@ -57,7 +84,11 @@ Les étapes 1 à 7 forment l'**ingestion** d'un pdf dans la base RAG. Les étape
 
 Chaque étape est une commande indépendante (un skill Claude Code), invocable seule. Les étapes 1 à 7 peuvent être enchaînées automatiquement par l'orchestrateur `/ragpipeline`.
 
+<a id="etapes"></a>
+
 ## Les étapes en détail
+
+<a id="etape-1"></a>
 
 ### 1. `/cours-condense` — Génération du cours condensé
 
@@ -71,11 +102,15 @@ Lit le pdf source **intégralement** (jamais un extrait) et produit un support d
 
 ![](/images/exemple_sommaire_support_condensé.png)
 
+<a id="etape-2"></a>
+
 ### 2. `/rag-extraction` — Conversion en markdown pivot
 
 `/rag-extraction <chemin_vers_pdf_condense>`
 
 Convertit le PDF condensé (sortie de l'étape 1) en un markdown "pivot" qui distingue proprement titres, code et prose, et extrait les images du cours condensé. Une réparation automatique des ligatures typographiques cassées (ex. "ﬁ", "ﬂ") est appliquée si nécessaire. Traite aussi la détection de formules mathématiques mal ordonnées par l'extraction PDF brute.
+
+<a id="etape-3"></a>
 
 ### 3. `/rag-nottext` — Description des éléments non-textuels
 
@@ -83,11 +118,15 @@ Convertit le PDF condensé (sortie de l'étape 1) en un markdown "pivot" qui dis
 
 Pour chaque image, bloc de code et formule d'affichage (déjà en LaTeX) produits à l'étape 2 : description en langage naturel, OCR/renommage adapté pour les images (classification formule mathématique vs image générale, LaTeX via pix2tex ou texte via tesseract, nom de fichier explicite), puis injection de cette description dans le markdown pivot, juste après l'élément. Un modèle d'embedding texte ne rapproche quasiment jamais une question en français d'un verbatim LaTeX, code ou image brut — vérifié empiriquement — donc sans cette étape, ce contenu reste invisible à la recherche vectorielle.
 
+<a id="etape-4"></a>
+
 ### 4. `/rag-chunking` — Découpage en chunks
 
 `/rag-chunking <pdf_condense_ou_document_id>`
 
 Découpe le markdown pivot enrichi en chunks d'environ 400 tokens (avec recouvrement), sans jamais couper un bloc de code, une image ou une formule au milieu. Pour un élément décrit par `/rag-nottext`, le texte réellement embeddé (calculé à l'étape suivante) ne retient que sa description en langage naturel — jamais le verbatim brut — pour ne pas diluer la similarité avec une question en français. Les sections structurelles (table des matières, sommaire, index, bibliographie...) sont exclues du découpage : elles restent dans `pivot.md` mais n'engendrent aucun chunk, donc rien n'est indexé, envoyé à l'extraction de concepts ni relié au graphe. Étape purement déterministe (basée sur le tokenizer réel du modèle d'embedding, `BAAI/bge-m3`), aucun appel à un modèle de langage.
+
+<a id="etape-5"></a>
 
 ### 5. `/rag-index` — Indexation vectorielle
 
@@ -95,11 +134,15 @@ Découpe le markdown pivot enrichi en chunks d'environ 400 tokens (avec recouvre
 
 Calcule les embeddings de chaque chunk (modèle multilingue local `BAAI/bge-m3` via `sentence-transformers`, sans clé API externe) et les indexe dans une base vectorielle Chroma partagée entre tous les documents du corpus. Les chunks de texte "bruité" (motifs mal extraits d'un diagramme) sont filtrés automatiquement.
 
+<a id="etape-6"></a>
+
 ### 6. `/rag-concepts` — Extraction des concepts
 
 `/rag-concepts <pdf_condense_ou_document_id>`
 
 Pour chaque chunk indexable, un appel `claude -p` headless extrait 3 à 8 concepts significatifs (nom, forme canonique, type et définition courte `sense` : ce que le mot désigne dans ce passage, pour distinguer les homonymes d'un pdf à l'autre, par exemple `lambda` en Python ou en régularisation). Cette étape prépare la construction du graphe de connaissances de l'étape suivante.
+
+<a id="etape-7"></a>
 
 ### 7. `/rag-graphe` — Construction du graphe de connaissances (GraphRAG)
 
@@ -115,17 +158,23 @@ C'est cette étape qui permet de repérer qu'un même concept est traité dans p
 
 Une fois le graphe du document terminé, une **consolidation** du graphe partagé (`rag-graphe/scripts/consolidate.py`, lancée par le skill, par lots) rattrape les doublons restants : les paires de concepts à similarité ≥ 0.80 sont jugées par `claude -p` et fusionnées si besoin, puis chaque concept reçoit pour forme canonique son nom le plus fréquent dans le corpus.
 
+<a id="etape-8"></a>
+
 ### 8. `/rag-integrity` — Audit du graphe
 
 `/rag-integrity`
 
 Hors pipeline et transversal au corpus, à lancer à la demande (par exemple après l'ajout d'un pdf). En deux étapes : `report.py` calcule de façon déterministe les métriques du graphe (volumes par pdf, hubs, alias suspects, fusions manquées ou à tort, doublons) et repère les cas ambigus avec des extraits de chunks réels ; puis `audit_lot.py` fait juger ces cas par `claude -p`, par lots. Les rapports, l'historique et le registre des décisions sont écrits sous `rag_data/audit/`. Cette commande ne fait qu'auditer l'intégrité du graphe RAG et ne modifie jamais rien.
 
+<a id="etape-9"></a>
+
 ### 9. `/expressions-article` — Expressions à approfondir
 
 `/expressions-article <slug>` (ou `<numéro>`, ou `--all`)
 
 Commande qui repère dans un article de `rag_data/content/work/` les expressions (méthodes, outils, concepts, métriques, acronymes) qui méritent un contenu dédié. Chacune est vérifiée dans la base graphe (existe-t-elle dans le corpus, et de quel type est-elle ?), puis dans les articles existants (déjà traitée, simplement mentionnée, ou absente). Le skill propose les expressions trouvées à la commande suivante `/create-content` .
+
+<a id="etape-10"></a>
 
 ### 10. `/create-content` — Rédaction d'un article web
 
@@ -147,6 +196,8 @@ Sortie : `rag_data/content/work/<slug>/` (`article.md`, `dossier.md`, `dossier.j
 
 ![](/images/contenu_cree_par_create_content.png) 
 
+<a id="etape-11"></a>
+
 ### 11. `/publish-content` — Publication sur WordPress
 
 `/publish-content <slug>` (le slug est le nom du dossier sous `rag_data/content/work/`)
@@ -162,11 +213,15 @@ Cette commande envoie sur un site WordPress, via l'API REST, un article produit 
 
 ![](/images/exemple_contenu_web_avec_create_content.png) 
 
+<a id="etape-12"></a>
+
 ### 12. `/maillage` — Propositions de maillage interne
 
 `/maillage <slug>` (ou `<numéro>`, ou `--all`)
 
 Cette commande construit une base vectorielle et un graphe Kuzu **à part** ( totalement indépendant de celles des cours condensés) sur les articles web crées. Pour chaque article crée, repère les expressions de son texte qui peuvent servir d'ancres vers les autres articles, puis fait relire chaque paire d'articles liée. Un rapport par article est écrit dans `rag_data/maillage/work/<slug>/`. Ne modifie aucun article et ne touche pas à WordPress. Tout se passe en local avec les articles crées en local avec la commande ` /create-content `
+
+<a id="etape-13"></a>
 
 ### 13. `/publish-maillage` — Insertion des liens sur WordPress
 
@@ -174,11 +229,15 @@ Cette commande construit une base vectorielle et un graphe Kuzu **à part** ( to
 
 Cette commande insère dans l'article déjà en ligne sur WordPress les liens relatifs proposés par `/maillage`, à partir du rapport. Un dry-run est obligatoire d'abord, le contenu d'origine est sauvegardé avant écriture, et le statut du post ne change pas.
 
+<a id="orchestrateur"></a>
+
 ### Orchestrateur : `/ragpipeline`
 
 `/ragpipeline <chemin_vers_livre.pdf> [--from ETAPE] [--force]`
 
 Enchaîne automatiquement les étapes d'ingestion 1 à 7 sur un pdf source, puis la consolidation du graphe. `--from` permet de reprendre le pipeline à une étape donnée (utile après une interruption), `--force` de relancer une étape déjà marquée comme terminée.
+
+<a id="outils"></a>
 
 ## Outils d'analyse et d'exploration (`tools/`)
 
@@ -192,6 +251,8 @@ Scripts hors-pipeline pour explorer ou auditer le corpus déjà ingéré. Seuls 
 - **`migrate_chunk_modalities.py`** — migration ponctuelle qui ajoute `has_image` aux `chunks.json` et copie `has_formula` / `has_image` dans les métadonnées Chroma, sans ré-embedder ni toucher au graphe (simulation par défaut, `--apply` pour écrire ; la base d'origine est sauvegardée).
 
 Le rapport de qualité du graphe, ancien `graph_quality_report.py`, est désormais le skill `/rag-integrity` (ci-dessus).
+
+<a id="organisation-des-donnees"></a>
 
 ## Organisation des données
 
@@ -208,6 +269,8 @@ rag_data/           toutes les données générées par le pipeline (chunks, emb
 
 - `corpuscondense/` et `rag_data/` sont créés automatiquement par le pipeline à la première exécution (`/cours-condense` puis les étapes suivantes) — rien à faire.
 - `corpusdedepart/` n'est en revanche créé par aucun script : c'est l'emplacement conventionnel où déposer ses PDF sources (les pdfs complets à condenser). À créer manuellement (`mkdir corpusdedepart`) avant la première utilisation, puis y placer ses PDF avant de lancer `/cours-condense <chemin_vers_livre.pdf>` — ou, à défaut, passer directement le chemin du PDF où qu'il se trouve, sans utiliser ce dossier.
+
+<a id="installation"></a>
 
 ## Installation
 
@@ -247,6 +310,8 @@ python -m venv .venv-rag
 .venv-rag/Scripts/python.exe -m pip install -r requirements.txt
 ```
 
+<a id="exploitation"></a>
+
 ## Exploitation dans Claude Desktop
 
 Une fois le dépôt cloné/téléchargé et l'installation (ci-dessus) terminée :
@@ -274,3 +339,11 @@ Le venv Python (`.venv-rag/`) et Tesseract n'ont besoin d'être ni activés ni r
 - **Exécution en arrière-plan du pipeline RAG : bloquée automatiquement, pas seulement déconseillée.** Le hook `.claude/hooks/block_rag_background.py` refuse toute commande `run_in_background` référençant un script des étapes 1 à 7 — Claude ne peut donc pas violer cette règle par erreur. Pourquoi cette règle existe : plusieurs étapes appellent `claude -p` en interne, et des invocations concurrentes provoqueraient des timeouts ou des corruptions de la base partagée (Chroma, Kuzu) si le hook ne les empêchait pas.
 - **Délégation de la lecture de `pivot.md` à un sous-agent : bloquée automatiquement, même logique.** Le hook `.claude/hooks/block_rag_extraction_subagent_read.py` refuse toute délégation à l'outil Agent de la lecture ou de la vérification de `pivot.md` (sortie de `/rag-extraction`) et de son rapport qualité/fidélité — même contrainte de déterminisme que ci-dessus.
 - `rag_data/` centralise l'état de tout le corpus (base vectorielle et graphe uniques, communs à tous les documents) — ne jamais le supprimer, même partiellement.
+
+<a id="licence"></a>
+
+## Licence
+
+Ce projet est distribué sous licence [Apache 2.0](LICENSE).
+
+Copyright 2026 Paul Romano — [LinkedIn](https://www.linkedin.com/in/paulromano/)
