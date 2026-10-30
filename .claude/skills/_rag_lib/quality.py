@@ -195,7 +195,9 @@ def assess_extraction_quality(result) -> QualityReport:
                 )
             )
 
-        if page.char_count < LOW_TEXT_DENSITY_THRESHOLD and not page.images:
+        # Une page scannée est une image : peu de texte ET au moins une image. Une page de titre
+        # sans image (peu de texte, mais texte bien extrait) n'est pas signalée.
+        if page.char_count < LOW_TEXT_DENSITY_THRESHOLD and page.images:
             report.issues.append(
                 QualityIssue(
                     page.page_number,

@@ -4,11 +4,11 @@
 
 Lit le titre, le premier mot-cle et la `category` (optionnelle : slug de
 categorie WordPress, ex. "rag" ; sa teinte est alors reprise) du frontmatter de
-rag_data/content/<slug>/article.md et ecrit rag_data/content/<slug>/<slug>.png
+rag_data/content/work/<slug>/article.md et ecrit rag_data/content/work/<slug>/<slug>.png
 (1200x630, ratio Open Graph). Aucune IA : la composition est un fond en
 degrade + formes geometriques dont la teinte et la disposition sont derivees
 du slug (meme slug -> meme image, articles differents -> images differentes).
-Ne mentionne jamais le livre source.
+Ne mentionne jamais le pdf source.
 
 <slug>.png (nom unique dans la mediatheque WP) est volontairement HORS de images/ : ce dossier ne contient que les
 images citees dans le corps de l'article. /publish-content l'uploade comme
@@ -34,8 +34,8 @@ for _stream in (sys.stdout, sys.stderr):
 import yaml
 from PIL import Image, ImageDraw, ImageFont
 
-ROOT = Path(__file__).resolve().parents[4]
-CONTENT_DIR = ROOT / "rag_data" / "content"
+ROOT = Path(__file__).resolve().parents[5]
+CONTENT_DIR = ROOT / "rag_data" / "content" / "work"
 W, H = 1200, 630
 MARGIN = 80
 
@@ -72,7 +72,7 @@ def slug_hue(slug: str, category: str | None = None) -> float:
 
 def wp_fields(slug: str, fm: dict) -> dict:
     """Texte alternatif / Legende / Description de la mediatheque WP pour la
-    couverture. Les trois champs sont toujours remplis, sans mention de livre."""
+    couverture. Les trois champs sont toujours remplis, sans mention de pdf."""
     title = str(fm.get("title", slug)).strip()
     desc = str(fm.get("description", "")).strip()
     return {

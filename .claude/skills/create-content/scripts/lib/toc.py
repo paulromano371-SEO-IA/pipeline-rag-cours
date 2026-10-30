@@ -25,8 +25,8 @@ for _stream in (sys.stdout, sys.stderr):
     if hasattr(_stream, "reconfigure"):
         _stream.reconfigure(encoding="utf-8", errors="replace")
 
-_PROJECT_ROOT = Path(__file__).resolve().parents[4]
-CONTENT_DIR = _PROJECT_ROOT / "rag_data" / "content"
+_PROJECT_ROOT = Path(__file__).resolve().parents[5]
+CONTENT_DIR = _PROJECT_ROOT / "rag_data" / "content" / "work"
 
 ESSENTIEL_TITLE = "L'essentiel en 30 secondes"
 _H2_RE = re.compile(r"^## (?!#)(.+?)\s*$", re.MULTILINE)
@@ -104,7 +104,7 @@ def apply_toc(text: str) -> tuple[str, str]:
 def main() -> int:
     import argparse
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("target", help="slug (sous rag_data/content/) ou chemin du dossier de contenu")
+    ap.add_argument("target", help="slug (sous rag_data/content/work/) ou chemin du dossier de contenu")
     ap.add_argument("--article", default="article.md")
     ap.add_argument("--check", action="store_true", help="n'ecrit rien, signale seulement un sommaire absent ou obsolete")
     args = ap.parse_args()

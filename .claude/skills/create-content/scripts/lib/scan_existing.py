@@ -1,14 +1,14 @@
 """Etape 1 de /create-content : reperer, parmi les contenus deja ecrits sous
-`rag_data/content/`, ceux qui sont PROCHES du sujet du nouveau contenu (les
+`rag_data/content/work/`, ceux qui sont PROCHES du sujet du nouveau contenu (les
 « voisins »), pour ne jamais redire ce qu'ils disent deja.
 
 Lecture seule, aucun appel LLM. Ne modifie ni ne supprime aucun article
-existant : n'ecrit que `rag_data/content/<slug>/voisins.json`.
+existant : n'ecrit que `rag_data/content/work/<slug>/voisins.json`.
 
 Proximite d'un ancien article avec l'expression, mesuree de trois facons :
   - chunks : part des chunks que le RAG remonte pour l'expression qui ont deja
     ete CITES (`<!--src:Sxxx-->`) par l'ancien article ;
-  - sections : meme mesure, au niveau (livre, section) -- plus robuste quand
+  - sections : meme mesure, au niveau (pdf, section) -- plus robuste quand
     deux articles piochent des chunks voisins d'une meme section ;
   - semantique : similarite cosinus entre l'expression et le titre + description
     + mots-cles + H2 de l'ancien article (meme modele d'embedding que le RAG).
@@ -41,7 +41,7 @@ for _stream in (sys.stdout, sys.stderr):
     if hasattr(_stream, "reconfigure"):
         _stream.reconfigure(encoding="utf-8", errors="replace")
 
-_PROJECT_ROOT = Path(__file__).resolve().parents[4]
+_PROJECT_ROOT = Path(__file__).resolve().parents[5]
 sys.path.insert(0, str(_PROJECT_ROOT / ".claude" / "skills" / "_rag_lib"))
 sys.path.insert(0, str(_PROJECT_ROOT / "tools"))
 
@@ -57,7 +57,7 @@ from retrieval import (  # noqa: E402
 from vector_store import embed_texts  # noqa: E402
 from gather import slugify_expression  # noqa: E402
 
-CONTENT_DIR = paths.RAG_DATA_DIR / "content"
+CONTENT_DIR = paths.RAG_DATA_DIR / "content" / "work"
 
 _SRC_RE = re.compile(r"<!--\s*src:\s*([^>]*?)\s*-->")
 _FENCE_RE = re.compile(r"^```[^\n]*\n.*?^```[ \t]*$", re.MULTILINE | re.DOTALL)
@@ -138,7 +138,7 @@ def main() -> int:
     ap.add_argument("--max-neighbors", type=int, default=DEFAULT_MAX_NEIGHBORS)
     ap.add_argument("--db-path", type=str, default=str(paths.VECTOR_DB_PATH))
     ap.add_argument("--graph-db-path", type=str, default=str(paths.GRAPH_DB_PATH))
-    ap.add_argument("--out-dir", type=str, default=None, help="defaut : rag_data/content/<slug>/")
+    ap.add_argument("--out-dir", type=str, default=None, help="defaut : rag_data/content/work/<slug>/")
     args = ap.parse_args()
 
     slug = args.slug or slugify_expression(args.expression)
@@ -163,7 +163,7 @@ def main() -> int:
     print(f"  Articles existants examines : {len(articles)}")
     if not articles:
         write_result([])
-        print("  AUCUN VOISIN : aucun contenu existant sous rag_data/content/ -- page blanche, ce n'est pas bloquant.")
+        print("  AUCUN VOISIN : aucun contenu existant sous rag_data/content/work/ -- page blanche, ce n'est pas bloquant.")
         return 0
 
     # --- sonde : ce que le RAG remonte pour l'expression ---------------------

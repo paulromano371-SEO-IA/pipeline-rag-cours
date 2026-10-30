@@ -1,5 +1,5 @@
 """Emplacements standardises du pipeline RAG, centralises a la racine du
-projet — jamais de donnees generees eparpillees a cote de chaque livre
+projet — jamais de donnees generees eparpillees a cote de chaque pdf
 source.
 
     <racine_projet>/

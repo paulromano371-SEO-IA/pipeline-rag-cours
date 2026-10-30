@@ -1,4 +1,4 @@
-"""Sections structurelles d'un livre (table des matieres, sommaire, index,
+"""Sections structurelles d'un pdf (table des matieres, sommaire, index,
 bibliographie...) : du texte de navigation, sans contenu reel a retrouver.
 
 Une seule liste pour tout le pipeline :

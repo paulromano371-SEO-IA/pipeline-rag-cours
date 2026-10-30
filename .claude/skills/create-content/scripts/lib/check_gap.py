@@ -2,7 +2,7 @@
 
 Avant d'ecrire « le corpus ne couvre pas X » (rapport final de /create-content),
 on le verifie ici SANS passer par la recherche semantique ni par la memoire du
-modele : le script parcourt directement les `chunks.json` de tous les livres
+modele : le script parcourt directement les `chunks.json` de tous les pdf
 (`rag_data/work/*/chunks.json`) et compte les chunks qui contiennent chaque
 terme (insensible a la casse et aux accents).
 
@@ -13,7 +13,7 @@ terme (insensible a la casse et aux accents).
 - chaque `<terme>` est cherche tel quel ; plusieurs formes se separent par `|`
   (ex. "softmax|multinomial").
 
-Sortie par terme : nombre de chunks contenant le terme (tous livres), dont
+Sortie par terme : nombre de chunks contenant le terme (tous pdf), dont
 combien mentionnent aussi le sujet, et quelques extraits. Verdict a rapporter :
   - 0 chunk                  -> « absent du corpus » (verifie par recherche directe)
   - chunks sans le sujet     -> le terme existe mais pas rattache au sujet

@@ -6,13 +6,13 @@ Pour une expression (ex. "comment fonctionne une regression lineaire ?") et
 une liste de sous-requetes (`--query`, repetable : definition, formule, code,
 hypotheses, limites...), appelle `tools/retrieval.retrieve()` une fois par
 requete, fusionne et dedoublonne les chunks, puis ecrit sous
-`rag_data/content/<slug>/` :
+`rag_data/content/work/<slug>/` :
 
-    dossier.md    ce que le redacteur lit : chunks regroupes par livre puis par
+    dossier.md    ce que le redacteur lit : chunks regroupes par pdf puis par
                   section, chacun avec un identifiant stable [S012], son type
                   (texte/code/formule/image), et pour une image son chemin web
     dossier.json  la meme chose, structuree : entree de verify.py
-    images/       copie des images referencees (noms uniques par livre), pour
+    images/       copie des images referencees (noms uniques par pdf), pour
                   que l'article final soit autonome et publiable tel quel
 
 Chaque sous-requete porte la FACETTE qu'elle sert, sous la forme
@@ -47,11 +47,12 @@ for _stream in (sys.stdout, sys.stderr):
     if hasattr(_stream, "reconfigure"):
         _stream.reconfigure(encoding="utf-8", errors="replace")
 
-_PROJECT_ROOT = Path(__file__).resolve().parents[4]
+_PROJECT_ROOT = Path(__file__).resolve().parents[5]
 sys.path.insert(0, str(_PROJECT_ROOT / ".claude" / "skills" / "_rag_lib"))
 sys.path.insert(0, str(_PROJECT_ROOT / "tools"))
 
 import paths  # noqa: E402
+from slugs import slugify_expression  # noqa: E402  (réexporté : etape0_cadrage importe depuis gather)
 from retrieval import (  # noqa: E402
     DEFAULT_MAX_SECTIONS,
     DEFAULT_RELEVANCE_MARGIN,
@@ -61,7 +62,7 @@ from retrieval import (  # noqa: E402
     retrieve,
 )
 
-CONTENT_DIR = paths.RAG_DATA_DIR / "content"
+CONTENT_DIR = paths.RAG_DATA_DIR / "content" / "work"
 
 DESCRIPTION_MARKER = "<!-- rag-nottext:description -->"
 OCR_MARKER = "<!-- rag-nottext:ocr -->"
@@ -70,7 +71,7 @@ _FENCE_RE = re.compile(r"^```", re.MULTILINE)
 
 # --- signaux de matiere distinctive (deterministe, purement heuristique) ---
 # Objectif : reperer les chunks qui portent un chiffre precis, un benchmark,
-# une entite nommee ou un cas concret -- ce que les livres source (souvent en
+# une entite nommee ou un cas concret -- ce que les pdf source (souvent en
 # anglais, non indexes par les moteurs de recherche) apportent et qu'un savoir
 # generique deja disponible partout n'apporte pas. Un simple signal pour aider
 # le redacteur a prioriser, jamais un jugement : un chunk sans signal peut
@@ -108,24 +109,8 @@ def has_named_entity_signal(text: str) -> bool:
     return any(a not in _GENERIC_ACRONYMS for a in _ACRONYM_RE.findall(text))
 
 
-def slugify_expression(text: str) -> str:
-    """Slug ASCII lisible ("regression-lineaire"), accents normalises."""
-    s = unicodedata.normalize("NFKD", text.lower())
-    s = "".join(c for c in s if not unicodedata.combining(c))
-    s = re.sub(r"[^a-z0-9]+", "-", s).strip("-")
-    for filler in ("comment-fonctionne-une-", "comment-fonctionne-un-", "comment-fonctionne-", "qu-est-ce-que-"):
-        if s.startswith(filler) and len(s) > len(filler) + 3:
-            s = s[len(filler):]
-            break
-    # Slug complet, iso avec l'expression. Garde-fou purement technique (chemins Windows) :
-    # au-dela de 200 car., coupe a une frontiere de mot.
-    if len(s) > 200:
-        s = s[:200].rsplit("-", 1)[0]
-    return s.strip("-") or "contenu"
-
-
 def document_title(document_id: str) -> str:
-    """Titre lisible du livre, si `meta.json` en fournit un ; sinon le
+    """Titre lisible du pdf, si `meta.json` en fournit un ; sinon le
     `document_id` sans son suffixe de hash. Ne plante jamais."""
     try:
         meta = json.loads((paths.work_dir_for(document_id) / "meta.json").read_text(encoding="utf-8"))
@@ -164,7 +149,7 @@ def main() -> int:
     ap.add_argument("--relevance-margin", type=float, default=DEFAULT_RELEVANCE_MARGIN)
     ap.add_argument("--db-path", type=str, default=str(paths.VECTOR_DB_PATH))
     ap.add_argument("--graph-db-path", type=str, default=str(paths.GRAPH_DB_PATH))
-    ap.add_argument("--out-dir", type=str, default=None, help="defaut : rag_data/content/<slug>/")
+    ap.add_argument("--out-dir", type=str, default=None, help="defaut : rag_data/content/work/<slug>/")
     ap.add_argument("--voisins", type=str, default=None, help="voisins.json produit par scan_existing.py (defaut : <out-dir>/voisins.json s'il existe)")
     args = ap.parse_args()
 
@@ -229,7 +214,7 @@ def main() -> int:
               "(ou la base est vide / en cours d'ingestion).")
         return 3
 
-    # --- regroupement (livre, section), sections classees par pertinence ---
+    # --- regroupement (pdf, section), sections classees par pertinence ---
     sections: dict[tuple[str, str], list[dict]] = {}
     for entry in merged.values():
         c = entry["chunk"]
@@ -311,9 +296,9 @@ def main() -> int:
     books = sorted({(it["document_id"], it["book"]) for it in items})
 
     # --- signaux de diversite et de matiere distinctive (voir plus haut) ----
-    # book_coverage : livres retrouves par recherche semantique directe (pas
+    # book_coverage : pdf retrouves par recherche semantique directe (pas
     # seulement rattaches via section/graphe de concepts) -- un sujet couvert
-    # par un seul livre est un signal de risque "commodity" (savoir standard,
+    # par un seul pdf est un signal de risque "commodity" (savoir standard,
     # difficile a differencier) ; couvert par plusieurs, un signal positif.
     searched_books = {it["document_id"] for it in items if any(r == "search" for r in it["found_by"])}
     book_coverage = len(searched_books)

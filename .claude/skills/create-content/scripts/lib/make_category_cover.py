@@ -31,7 +31,7 @@ for _stream in (sys.stdout, sys.stderr):
     if hasattr(_stream, "reconfigure"):
         _stream.reconfigure(encoding="utf-8", errors="replace")
 
-ROOT = Path(__file__).resolve().parents[4]
+ROOT = Path(__file__).resolve().parents[5]
 OUT_DIR = ROOT / "rag_data" / "categories"
 W, H = 1600, 400
 S = 2  # facteur de sur-echantillonnage

@@ -11,8 +11,8 @@ Bloquant (code de sortie 2) :
   - citations : chaque <!--src:Sxxx--> designe un identifiant du dossier ;
   - fuites : aucun marqueur interne du pipeline (rag-nottext, [DESCRIPTION DU
     PIPELINE], "chunk", identifiants [Sxxx] visibles) dans le texte lisible ;
-  - references interdites : aux livres sources (« dans ce livre », « l'auteur »,
-    « chapitre 3 », mots livre/ouvrage/auteur) ou a un autre contenu du site
+  - references interdites : aux pdf sources (« dans ce pdf », « l'auteur »,
+    « chapitre 3 », mots pdf/ouvrage/auteur) ou a un autre contenu du site
     (titre d'un article existant, « dans notre article »...) ;
   - structure : frontmatter (title, description, slug), un seul H1, >= 3 H2 ;
   - voix : aucune marque de vouvoiement (vous/votre/vos) -- le projet impose
@@ -60,8 +60,8 @@ for _stream in (sys.stdout, sys.stderr):
     if hasattr(_stream, "reconfigure"):
         _stream.reconfigure(encoding="utf-8", errors="replace")
 
-_PROJECT_ROOT = Path(__file__).resolve().parents[4]
-CONTENT_DIR = _PROJECT_ROOT / "rag_data" / "content"
+_PROJECT_ROOT = Path(__file__).resolve().parents[5]
+CONTENT_DIR = _PROJECT_ROOT / "rag_data" / "content" / "work"
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import toc as toc_mod  # noqa: E402  (sommaire cliquable : meme code que toc.py)
@@ -74,8 +74,8 @@ _DISPLAY_FORMULA_RE = re.compile(r"\$\$(.+?)\$\$", re.DOTALL)
 _LEAK_RE = re.compile(r"rag-nottext|DESCRIPTION DU PIPELINE|TRANSCRIPTION OCR|\bchunks?\b|\[S\d{3}\]", re.IGNORECASE)
 _ELISION_RE = re.compile(r"^\s*(#|//)?\s*(\.\.\.|…)\s*$")
 
-# --- references interdites : aux livres sources, aux autres articles ---------
-# L'article doit se tenir seul : jamais « dans ce livre », « l'auteur explique »,
+# --- references interdites : aux pdf sources, aux autres articles ---------
+# L'article doit se tenir seul : jamais « dans ce pdf », « l'auteur explique »,
 # ni « dans notre article sur... » / titre d'un autre contenu. Les liens vers
 # d'autres contenus se decident a la publication (champ `related`), pas ici.
 _APO = r"['’]"
@@ -94,7 +94,12 @@ _ARTICLE_REF_RES = [
     re.compile(r"\b(?:un\s+)?(?:autre|précédent|prochain|dernier)\s+article\b", re.IGNORECASE),
     re.compile(r"\barticles?\s+(?:cité|cités|précédent|précédents|voisin|voisins|complémentaire|complémentaires)\b", re.IGNORECASE),
     re.compile(r"\b(?:voir|lis|lire|consulte|consulter|renvoie|renvoi)\b[^.\n]{0,40}\barticles?\b", re.IGNORECASE),
+    re.compile(r"\barticle\s+original\b", re.IGNORECASE),
 ]
+# attribution a des auteurs par leur nom (« Edge et ses collègues », « Sarmah et al. »)
+_AUTHOR_ATTRIB_RE = re.compile(r"\bet\s+(?:ses|leurs)\s+collègues\b|\bet\s+al\b\.?", re.IGNORECASE)
+# langage de bloc de code seul sur une ligne, hors fence : clôtures ``` perdues
+_BARE_LANG_LINE_RE = re.compile(r"^(?:python|py|bash|sh|shell|powershell|sql|cypher|json|yaml|text)\s*$", re.MULTILINE)
 _VOUVOIEMENT_RE = re.compile(r"\b(vous|votre|vos)\b", re.IGNORECASE)
 
 # --- detection heuristique de variables non definies (pas un vrai parseur
@@ -629,9 +634,9 @@ def check_bold(body: str) -> list[str]:
 
 
 def check_references(content_dir: Path, text: str) -> list[str]:
-    """Erreurs (bloquantes) : reference a un livre source (« dans ce livre »,
+    """Erreurs (bloquantes) : reference a un pdf source (« dans ce pdf »,
     « l'auteur », « chapitre 3 »...) ou a un autre contenu du site (titre d'un
-    article existant, « dans notre article »...). Les mots isoles livre /
+    article existant, « dans notre article »...). Les mots isoles pdf /
     ouvrage / auteur ne sont signales que s'ils restent apres les motifs forts."""
     errs: list[str] = []
     seen: set[str] = set()
@@ -656,6 +661,9 @@ def check_references(content_dir: Path, text: str) -> list[str]:
     for rx in _ARTICLE_REF_RES:
         for m in rx.finditer(text):
             add("reference a un autre article", m)
+
+    for m in _AUTHOR_ATTRIB_RE.finditer(text):
+        add("attribution a des auteurs par leur nom", m)
 
     folded_text = _fold(text)
     if CONTENT_DIR.is_dir():
@@ -710,7 +718,7 @@ def dossier_code_lines(items: list[dict]) -> set[str]:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("target", help="slug (sous rag_data/content/) ou chemin du dossier de contenu")
+    ap.add_argument("target", help="slug (sous rag_data/content/work/) ou chemin du dossier de contenu")
     ap.add_argument("--article", default="article.md")
     ap.add_argument("--strict", action="store_true", help="les avertissements deviennent bloquants")
     args = ap.parse_args()
@@ -771,7 +779,13 @@ def main() -> int:
     for m in _LEAK_RE.finditer(_FENCE_BLOCK_RE.sub("", readable)):
         errors.append(f"fuite interne dans le texte : {m.group(0)!r}")
 
-    # --- references interdites : livres sources, autres articles -------------
+    # --- blocs de code : clôtures ``` perdues ----------------------------------
+    if body.count("```") % 2 == 1:
+        errors.append("bloc de code non clos : nombre impair de ``` dans l'article")
+    for m in _BARE_LANG_LINE_RE.finditer(_FENCE_BLOCK_RE.sub("", body)):
+        errors.append(f"bloc de code sans ``` d'ouverture : ligne « {m.group(0).strip()} » seule")
+
+    # --- references interdites : pdf sources, autres articles -------------
     scan_text = _FENCE_BLOCK_RE.sub("", readable) + "\n" + fm.get("title", "") + "\n" + fm.get("description", "")
     errors.extend(check_references(content_dir, scan_text))
 
