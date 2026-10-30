@@ -8,15 +8,16 @@ description: Résout les concepts extraits (produits par /rag-concepts) en entit
 Pour chaque mention de concept, compare par similarité d'embedding (nom +
 définition courte `sense`, produite par `/rag-concepts`) aux concepts déjà
 connus du graphe partagé (tous documents confondus) :
+
 - similarité >= 0.92 ET concept déjà vu dans CE document : fusion automatique
   (ajout d'alias), pas d'appel LLM. Un concept vu seulement dans d'AUTRES
-  livres n'est jamais fusionné automatiquement : le même mot peut y avoir un
+  pdfs n'est jamais fusionné automatiquement : le même mot peut y avoir un
   autre sens ("lambda" en Python / en régularisation), il va à l'arbitrage.
 - similarité < 0.80 : nouveau concept, pas d'appel LLM.
-- entre les deux (ou >= 0.92 vers un autre livre) : arbitrage par un appel
+- entre les deux (ou >= 0.92 vers un autre pdf) : arbitrage par un appel
   `claude -p` par candidat, sur les 3 concepts les plus proches (pas
   seulement le premier), jusqu'au premier « même concept ». L'arbitrage reçoit
-  pour chaque côté le nom, la définition, le(s) livre(s) et, pour la mention,
+  pour chaque côté le nom, la définition, le(s) pdf(s) et, pour la mention,
   un extrait du chunk.
 
 C'est cette étape qui permet de détecter qu'un même concept est traité dans
@@ -27,26 +28,35 @@ est ignorée et journalisée sur stderr, sans interrompre le traitement des
 mentions suivantes — même principe que `/rag-concepts` pour un chunk en
 échec. Le nombre de mentions ignorées est rapporté à la fin.
 
-Le graphe Kuzu lui-même est déjà persisté au fil de l'eau (chaque concept/
-lien est écrit dès sa création) ; un fichier `graphe_progress.json` dans le
-dossier de travail du document retient en plus, après chaque chunk
-entièrement traité, quels chunks ne plus retraiter — une interruption ne
-perd jamais plus d'un chunk, et une reprise (relance sans `--force`) saute
-les chunks déjà faits au lieu de ré-arbitrer inutilement des mentions déjà
-liées. Ce fichier est supprimé automatiquement une fois l'étape terminée.
+Les écritures dans Kuzu se font pour tout le lot, une fois toutes les décisions
+prises. Une interruption pendant un lot fait donc perdre ce lot, pas les lots
+déjà terminés. Un fichier `graphe_progress.json` dans le dossier de travail du
+document retient, après chaque chunk entièrement traité, quels chunks ne plus
+retraiter ; une reprise (relance de la même commande) saute les chunks déjà
+faits au lieu de ré-arbitrer inutilement des mentions déjà liées. Ce fichier
+n'est jamais supprimé automatiquement : il est conservé à la fin de l'étape.
 
-## Vider le graphe
+## Sans argument : lister les pdfs
 
-`ConceptGraph.clear()` (`_rag_lib/graph_store.py`) supprime tous les nœuds
-et relations sans supprimer le schéma ni le dossier de fichiers Kuzu — utile
-après un changement du prompt d'extraction de concepts ou des seuils de
-résolution d'entités, pour ne pas mélanger anciennes et nouvelles formes.
-N'agit que sur le graphe : ne réinitialise pas le stage "graphe" du
-`status.json` des documents qui y avaient déjà contribué, à faire séparément
-si une reconstruction complète est voulue. Le fichier
-`rag_data/db/consolidation_decisions.json` (jugements de la consolidation) n'est
-pas vidé : ses anciens identifiants de concepts ne correspondent plus à rien
-après un `clear()` (sans effet, mais il peut être supprimé).
+Lance, en premier plan :
+
+```bash
+"<racine_projet>/.venv-rag/Scripts/python.exe" "<racine_projet>/.claude/skills/rag-graphe/scripts/lib/lister_a_graphe.py"
+```
+
+Liste les pdfs de `corpuscondense/` prêts pour `/rag-graphe` :
+`extraction_concepts` à `done` dans `status.json`, et `graphe` pas encore
+`done`. Lecture seule.
+
+Présente la liste dans la réponse, en Markdown numéroté, **hors de tout bloc de code**, avec les noms exacts, puis attends le choix de l'utilisateur :
+
+- **Sans `--all`** : attends le choix de l'utilisateur :
+  - **Numéro** : relance la liste pour avoir l'état à jour, puis prends le pdf portant ce numéro. Numéro absent : signale-le et redemande.
+  - **Nom** : cherche le pdf dans `corpuscondense/` (insensible à la casse, correspondance exacte ou sous-chaîne unique). Zéro ou plusieurs correspondances : signale-le et redemande.
+- **Avec `--all`** : traite les pdfs de la liste **un par un, dans l'ordre**. Annonce chaque pdf en une ligne (numéro, nom, `document_id`), puis, une fois la liste épuisée, affiche un tableau récapitulatif : une ligne par pdf, avec son verdict et son `document_id`. 
+- Affiche un bouton All pour l'option --all
+
+Le pdf choisi se traite ensuite avec le PDF `corpuscondense/<nom>.pdf` (ou son `document_id`) comme argument, selon « Un message de retour par lot » ci-dessous.
 
 ## Interpréteur Python
 
@@ -72,88 +82,47 @@ d'un skill du projet. Voir `/ragpipeline`, section « Pourquoi le foreground ».
 vérification des sorties de ce skill : elle se fait directement, dans le même
 tour de conversation, jamais « pour économiser du contexte ».
 
-```bash
-"<racine_projet>/.venv-rag/Scripts/python.exe" "<racine_projet>/.claude/skills/rag-graphe/scripts/run.py" "<pdf_condense_ou_document_id_ou_dossier_de_travail>"
-```
-
-Options : `--force`, `--reset` (retire du graphe partagé la contribution de
-CE document uniquement — ses concepts et liens ; un concept encore
-mentionné par un AUTRE document est conservé, voir
-`ConceptGraph.remove_document` — puis reconstruit entièrement. N'affecte
-aucun autre document du corpus, contrairement à `ConceptGraph.clear()`),
-`--batch-size N` (voir ci-dessous).
-
-`--clear-graph` (**destructif pour tout le corpus**) vide le graphe partagé
-(concepts, chunks et liens de TOUS les documents, alias compris), remet à zéro
-l'étape `graphe` de chaque document (`status.json` et `graphe_progress.json`)
-puis **s'arrête : rien n'est reconstruit**. Chaque document doit ensuite être
-reconstruit à la main (`/rag-graphe <document> --reset --batch-size 10`). C'est
-la seule façon de supprimer les alias résiduels qu'un `--reset` laisse sur les
-concepts partagés avec un autre livre. Le script annonce d'abord l'impact
-(nombre de concepts, liens, chunks par document, documents dont le statut est
-remis à zéro, documents sans dossier de travail donc non reconstructibles) ;
-`--dry-run` l'affiche **sans rien modifier**. Comme `--reset`, il exige un
-`concepts.json` valide pour le document donné en argument (on ne vide pas ce
-que l'on ne peut pas refaire). **Jamais lancé de ta propre initiative** :
-uniquement si l'utilisateur l'a écrit dans sa commande en cours (directement,
-ou via `/ragpipeline --clear-graph`).
-
-`--reset` ne retire rien du graphe tant que le contrôle d'entrée n'a pas
-réussi (`concepts.json` valide, `/rag-concepts` terminé, CLI `claude`
-disponible) : en cas d'échec, la contribution du document au graphe reste
-intacte et le script sort avec le code 1. `remove_document` supprime les
-nœuds et les liens de ce document, mais pas les alias qu'il avait ajoutés à
-un concept encore mentionné par un autre livre.
-
 ## Traitement par lots (documents volumineux)
 
-Sur un livre à plusieurs centaines de chunks, une seule invocation dépasse la
+Sur un pdf à plusieurs centaines de chunks, une seule invocation dépasse la
 durée maximale d'une commande foreground (10 minutes) et l'application la
 passe en arrière-plan. Passe `--batch-size N` (ex. **10**, en chunks) dès le
 premier appel :
 
 - Chaque invocation traite au plus N chunks (résolution + liens, embedding
-  limité aux mentions du lot), puis s'arrête avec le code de sortie **3**
-  (« il reste du travail, ce n'est pas une erreur »). Une ligne
+  limité aux mentions du lot), puis s'arrête. La ligne `[LOT n/N]` signale qu'il
+  reste du travail : ce n'est pas une erreur. Une ligne
   `>>> Progression : X/Y chunk(s) traites` est affichée après chaque chunk.
-- **Relance exactement la même commande, sans `--force` ni `--reset`** : la
-  reprise s'appuie sur `graphe_progress.json`. Répète automatiquement, sans
-  jamais demander confirmation entre deux lots, tant que le code est 3.
-- `--force`/`--reset` uniquement au TOUT PREMIER lot, sinon chaque
-  invocation repartirait de zéro.
+- **Relance exactement la même commande** : la reprise s'appuie sur `graphe_progress.json`. Répète automatiquement, sans jamais demander confirmation entre deux lots, tant que la ligne est `[LOT n/N]`.
 - `status.json` est `done` uniquement après le dernier lot (contrôle de sortie
   compris). Entre deux lots il est marqué `failed` avec le détail « lot
   partiel en cours : N chunk(s) restant(s) » — jamais `done`.
 - **Un lot où aucun chunk n'est mené à bout termine le traitement** (les
   chunks avec mention ignorée restent « à refaire », donc sans cette règle le
-  code 3 bouclerait indéfiniment) : le contrôle de sortie tranche (code 2 si
-  > 5 % de mentions ignorées).
+  lot partiel bouclerait indéfiniment) : le contrôle de sortie tranche (code 2
+  si > 5 % de mentions ignorées).
 
 ## Un message de retour par lot (obligatoire)
 
-**Lance chaque lot avec `scripts/graphe_lot.py`** (un lot par appel, jamais
+**Lance chaque lot avec `scripts/etape1_lot.py`** (un lot par appel, jamais
 plusieurs lots enchaînés dans une même commande : au-delà de 10 minutes
 l'application la passerait en arrière-plan) :
 
 ```bash
-"<racine_projet>/.venv-rag/Scripts/python.exe" "<racine_projet>/.claude/skills/rag-graphe/scripts/graphe_lot.py" "<document_id_ou_pdf>" --batch-size 10 [--reset]
+"<racine_projet>/.venv-rag/Scripts/python.exe" "<racine_projet>/.claude/skills/rag-graphe/scripts/etape1_lot.py" "<document_id_ou_pdf>" --batch-size 10
 ```
 
-`--reset` uniquement sur le tout premier lot. Le script termine sa sortie par
-UNE ligne de bilan : `[LOT n/N]` (lot partiel : relancer la même commande),
-`[FIN]` (étape terminée), `[BLOQUANT]` ou `[ERREUR]`. **C'est cette ligne, et
-non le code de sortie, qui dit s'il faut relancer** : le script sort en **0**
+Le script termine sa sortie par UNE ligne de bilan : `[LOT n/N]` (lot partiel : relancer la même commande), `[FIN]` (étape terminée), `[BLOQUANT]` ou `[ERREUR]`. **C'est cette ligne, et non le code de sortie, qui dit s'il faut relancer** : le script sort en **0**
 pour `[LOT n/N]` et `[FIN]` (un lot partiel n'est pas une erreur, et l'interface
 n'a donc pas à l'afficher comme telle), en **2** pour `[BLOQUANT]` et en **1**
-pour `[ERREUR]`. Seul `run.py` (appelé directement, sans ce script) renvoie 3 sur
-un lot partiel — convention du pipeline, inchangée.
+pour `[ERREUR]`.
 
 **Après CHAQUE lot, avant de lancer le suivant, écris un message dans le
 chat** qui contient : la sortie brute du script, collée dans un bloc de code
 markdown, et sa ligne `[LOT n/N]` reprise telle quelle. Sans exception :
 jamais deux lots enchaînés sans ce message entre les deux, jamais un résumé
 condensé à la place de la sortie, y compris pour les lots intermédiaires. Un
-livre de 12 lots donne donc 12 messages. Cette obligation existe parce que
+pdf de 12 lots donne donc 12 messages. Cette obligation existe parce que
 l'affichage de l'application replie le résultat d'une commande : sans ce
 message, un lot terminé est indiscernable d'un lot encore en cours.
 
@@ -163,14 +132,14 @@ cause à l'utilisateur.
 ## Consolidation du graphe (sous-étape suivante, lancée par le skill)
 
 **Quand** : une fois le graphe du document terminé, c'est-à-dire quand
-`graphe_lot.py` affiche `[FIN]` (jamais avant, jamais sur `[BLOQUANT]` ou
-`[ERREUR]`). C'est **toi**, en suivant ce skill, qui la lances : elle n'est pas
-enchaînée par `graphe_lot.py`. Elle porte sur le graphe PARTAGÉ (tout le
+`etape1_lot.py` affiche `[FIN]` (jamais avant, jamais sur `[BLOQUANT]` ou
+`[ERREUR]`). Le skill la lance **automatiquement, sans demander à l'utilisateur**,
+juste après ce `[FIN]`, dans le même enchaînement. Elle porte sur le graphe PARTAGÉ (tout le
 corpus), pas sur un document.
 
 **À quoi ça sert** : rattraper les doublons que la résolution d'entités a
 laissés passer (ex. `numpy` / `array numpy`). Toutes les paires de concepts à
-similarité >= 0.80 sont jugées par `claude -p` (nom, type, définition, livres
+similarité >= 0.80 sont jugées par `claude -p` (nom, type, définition, pdfs
 et extrait de chunk des DEUX côtés) ; sur « même concept », le moins mentionné
 est fusionné dans l'autre (`ConceptGraph.merge_concepts` : alias et liens
 reportés).
@@ -180,23 +149,23 @@ foreground, jamais plusieurs lots dans une commande, sortie brute collée dans
 un bloc de code + ligne de bilan reprise telle quelle) :
 
 ```bash
-"<racine_projet>/.venv-rag/Scripts/python.exe" "<racine_projet>/.claude/skills/rag-graphe/scripts/consolidate.py" --batch-size 10
+"<racine_projet>/.venv-rag/Scripts/python.exe" "<racine_projet>/.claude/skills/rag-graphe/scripts/etape2_consolidation.py" --batch-size 10
 ```
 
 La commande se relance identique tant que la dernière ligne est
 `[LOT n/N] consolidation ...` (`n/N` compte les lots de consolidation, pas ceux
 du graphe). Elle se termine par `[FIN]`, `[BLOQUANT]` ou `[ERREUR]` ; code de
 sortie 0 pour `[LOT]`/`[FIN]`, 2 pour `[BLOQUANT]` (intégrité du graphe :
-n'enchaîne rien), 1 pour `[ERREUR]`. `--dry-run` (propre à ce script, sans
-rapport avec celui de `--clear-graph`) liste les paires à juger et les
-renommages prévus sans rien modifier.
+n'enchaîne rien), 1 pour `[ERREUR]`. `--dry-run` (propre à ce script) liste les
+paires à juger et les renommages prévus sans rien modifier.
 
 **Règles** :
+
 - **Mémoire des jugements** : chaque paire jugée (fusionnée OU distincte) est
-  notée dans `rag_data/db/consolidation_decisions.json` avec les livres qui
+  notée dans `rag_data/db/consolidation_decisions.json` avec les pdfs qui
   mentionnaient chaque concept. Une relance ne rejuge pas une paire tranchée,
   sauf une paire « distincte » dont l'un des concepts est mentionné depuis par
-  un NOUVEAU livre (nouveau contexte). Une décision d'un ancien format, sans
+  un NOUVEAU pdf (nouveau contexte). Une décision d'un ancien format, sans
   cette mémoire, n'est jamais rejugée.
 - **Garde sur le type** : deux concepts de types précis différents (ex. `method`
   et `tool`) ne sont jamais jugés ni fusionnés (comptés « ignorées ») ;
@@ -206,17 +175,17 @@ renommages prévus sans rien modifier.
   forme canonique son nom LE PLUS FRÉQUENT dans le corpus (mentions des
   `concepts.json` liées à ce concept ; égalité : ordre alphabétique ; une forme
   de 3 caractères ou moins n'est jamais choisie tant qu'un alias plus long
-  existe) : le nom ne dépend plus de l'ordre d'ingestion des livres. Alias et
+  existe) : le nom ne dépend plus de l'ordre d'ingestion des pdfs. Alias et
   embedding ne changent pas.
 - **Hors suivi** : la consolidation n'est pas tracée dans `status.json` et
   échappe aux « Contrôles » ci-dessous (qui portent sur le document) ;
   `"graphe": "done"` reste vrai même si elle échoue. Seul son propre `[FIN]`
   dit qu'elle est terminée.
-- Elle ne touche ni aux chunks ni aux liens d'un livre, au-delà du report des
+- Elle ne touche ni aux chunks ni aux liens d'un pdf, au-delà du report des
   liens du concept supprimé vers le concept conservé.
 
 Elle peut aussi se lancer seule (même commande), par exemple après avoir
-ajouté plusieurs livres.
+ajouté plusieurs pdfs.
 
 ## Prérequis
 
@@ -225,7 +194,7 @@ ajouté plusieurs livres.
 ## Sortie
 
 Graphe Kuzu persisté dans `<racine_projet>/rag_data/db/graph/` (**base
-UNIQUE, commune à tout le corpus**, jamais un graphe par livre). `status.json`
+UNIQUE, commune à tout le corpus**, jamais un graphe par pdf). `status.json`
 mis à jour — `"graphe": "done"` marque ce document comme entièrement traité
 par le pipeline RAG.
 
@@ -234,6 +203,7 @@ par le pipeline RAG.
 Rapporte le nombre de mentions résolues et liées.
 
 **Contrôles** (`_rag_lib/checks.py`) :
+
 - **Entrée** (code `1` si échec) : `concepts.json` valide et contenant au
   moins une mention, `/rag-concepts` terminé, CLI `claude` disponible.
 - **Sortie bloquante** (code `2`, étape `failed`) : plus de **5 %** de
@@ -249,8 +219,7 @@ Rapporte le nombre de mentions résolues et liées.
 - **Faux « déjà fait »** : un `done` dans `status.json` est vérifié contre le
   graphe ; s'il ne contient pas le document, il est reconstruit.
 
-Si l'utilisateur le
-demande, tu peux interroger le graphe directement (Python, module
+Si l'utilisateur le demande, tu peux interroger le graphe directement (Python, module
 `_rag_lib/graph_store.py`, fonction `ConceptGraph.shared_concepts(doc_a, doc_b)`)
 pour montrer les concepts partagés entre deux documents — c'est la preuve
 concrète que le pipeline relie plusieurs sources entre elles.

@@ -14,7 +14,7 @@ import json
 import re
 import subprocess
 
-DEFAULT_TIMEOUT = 180
+DEFAULT_TIMEOUT = 600
 
 # Nombre de tentatives SUPPLEMENTAIRES (donc 1 + ce nombre au total) que
 # `describe_code`/`describe_formula`/`describe_image` s'autorisent quand la
@@ -49,6 +49,8 @@ def run_claude_code(
     *,
     model: str | None = None,
     timeout: int = DEFAULT_TIMEOUT,
+    meta: dict | None = None,
+    effort: str | None = None,
 ) -> str:
     """Envoie `input_text` à un appel `claude -p` headless (sans outils ni
     MCP) avec `system_prompt`, et retourne le champ `result` de la réponse.
@@ -68,6 +70,8 @@ def run_claude_code(
     ]
     if model:
         cmd += ["--model", model]
+    if effort:
+        cmd += ["--effort", effort]
 
     try:
         proc = subprocess.run(
@@ -95,6 +99,14 @@ def run_claude_code(
     if "result" not in payload:
         raise ClaudeCodeCallError(f"réponse claude -p sans champ 'result' : {payload}")
 
+    if meta is not None:
+        # Usage réel renvoyé par claude -p (tokens, lectures/écritures de cache, coût) : rempli seulement si demandé.
+        meta.update({
+            "total_cost_usd": payload.get("total_cost_usd"),
+            "usage": payload.get("usage"),
+            "model_usage": payload.get("modelUsage"),
+            "duration_ms": payload.get("duration_ms"),
+        })
     return payload["result"]
 
 

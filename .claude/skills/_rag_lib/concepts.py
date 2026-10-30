@@ -86,9 +86,11 @@ def _parse_concepts(raw_json: str) -> list[ConceptMention]:
     return mentions
 
 
-def extract_concepts(chunk_text: str, *, model: str | None = None, timeout: int = 120) -> list[ConceptMention]:
+def extract_concepts(
+    chunk_text: str, *, model: str | None = None, effort: str | None = None, timeout: int = 120
+) -> list[ConceptMention]:
     try:
-        result = run_claude_code(_SYSTEM_PROMPT, chunk_text, model=model, timeout=timeout)
+        result = run_claude_code(_SYSTEM_PROMPT, chunk_text, model=model, effort=effort, timeout=timeout)
     except ClaudeCodeCallError as exc:
         raise ConceptExtractionError(str(exc)) from exc
 
