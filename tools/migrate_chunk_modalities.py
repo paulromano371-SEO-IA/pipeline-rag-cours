@@ -4,9 +4,9 @@ re-embedder, ni re-chunker, ni toucher au graphe.
 
 Pourquoi c'est sur : `chunk_markdown` est deterministe, et l'index d'un
 chunk ne depend pas des drapeaux `has_*`. Le script le PROUVE pour chaque
-livre avant d'ecrire quoi que ce soit : il re-decoupe `pivot.md` et exige
+pdf avant d'ecrire quoi que ce soit : il re-decoupe `pivot.md` et exige
 que index, texte, fil d'ariane, tokens, embed_text, has_code et has_formula
-soient identiques a `chunks.json`. Au moindre ecart, ce livre est ignore
+soient identiques a `chunks.json`. Au moindre ecart, ce pdf est ignore
 (rien n'est ecrit pour lui) -- les identifiants `document::index` sur
 lesquels reposent Chroma et le graphe ne peuvent donc pas devenir faux.
 
