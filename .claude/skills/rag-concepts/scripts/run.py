@@ -34,6 +34,9 @@ import checks
 import paths
 import status as status_lib
 
+MODEL = "claude-haiku-5-5"
+EFFORT = "medium"
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -136,7 +139,7 @@ def main() -> int:
             break
         attempts += 1
         try:
-            mentions = extract_concepts(chunk.text)
+            mentions = extract_concepts(chunk.text, model=MODEL, effort=EFFORT)
         except ConceptExtractionError as exc:
             print(f"  chunk {chunk.index}: extraction ignoree ({exc})", file=sys.stderr)
             n_skipped += 1

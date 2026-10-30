@@ -9,7 +9,7 @@ Pour chaque chunk (hors bruit), un appel `claude -p` headless (sans outils ni
 MCP, ne consomme pas le contexte de cette conversation) extrait 3-8 concepts
 significatifs avec nom, forme canonique, type et **définition courte**
 (`sense`, 5 à 12 mots : ce que le mot désigne DANS CE PASSAGE). La définition
-sert à `/rag-graphe` à ne pas fusionner deux homonymes de livres différents
+sert à `/rag-graphe` à ne pas fusionner deux homonymes de pdf différents
 (ex. `lambda` = fonction Python ou paramètre de régularisation ; `biais`
 statistique ou paramètre d'un réseau). Un chunk dont l'extraction échoue est
 ignoré et journalisé, sans interrompre le traitement des autres.
@@ -25,6 +25,27 @@ jamais plus d'un chunk de progression. Une reprise (relance sans `--force`,
 `status.json` pas encore "done") saute automatiquement les chunks déjà
 présents dans le fichier ; un chunk qui avait échoué est naturellement
 retenté (il n'est jamais enregistré).
+
+## Sans argument : lister les pdf
+
+Lance, en premier plan :
+
+```bash
+"<racine_projet>/.venv-rag/Scripts/python.exe" "<racine_projet>/.claude/skills/rag-concepts/scripts/lib/lister_a_concepts.py"
+```
+
+Liste les pdf de `corpuscondense/` prêts pour `/rag-concepts` :
+`indexation_vectorielle` à `done` dans `status.json`, et `extraction_concepts`
+pas encore `done`. Lecture seule.
+
+Présente la liste dans la réponse, en Markdown numéroté, **hors de tout bloc de code**, avec les noms exacts, puis attends le choix de l'utilisateur :
+
+- **Sans `--all`** : attends le choix de l’utilisateur :
+  - **Numéro** : relance la liste pour avoir l’état à jour, puis prends le pdf portant ce numéro. Numéro absent : signale-le et redemande.
+  - **Nom** : cherche le pdf dans `corpuscondense/` (insensible à la casse, correspondance exacte ou sous-chaîne unique). Zéro ou plusieurs correspondances : signale-le et redemande.
+- **Avec `--all`** : Traite les pdf de la liste **un par un, dans l’ordre**. Annonce chaque pdf en une ligne (numéro, nom, `document_id`), puis, une fois la liste épuisée, affiche un tableau récapitulatif : une ligne par pdf, avec son verdict et son `document_id`.
+
+Le pdf choisi se traite ensuite avec le PDF `corpuscondense/<nom>.pdf` (ou son `document_id`) comme argument, décrit ci-dessous.
 
 ## Interpréteur Python
 
@@ -67,7 +88,7 @@ le code 1.
 
 ## Traitement par lots (documents volumineux)
 
-Un appel `claude -p` par chunk : sur un livre de plusieurs centaines de
+Un appel `claude -p` par chunk : sur un pdf de plusieurs centaines de
 chunks, une seule invocation dépasse la durée maximale d'une commande
 foreground (10 minutes) et l'application la passe alors en arrière-plan.
 Passe `--batch-size N` (ex. **10**) dès le premier appel :
@@ -115,7 +136,7 @@ chat** qui contient : la sortie brute du script, collée dans un bloc de code
 markdown, et sa ligne `[LOT n/N]` reprise telle quelle. Sans exception :
 jamais deux lots enchaînés sans ce message entre les deux, jamais un résumé
 condensé à la place de la sortie, y compris pour les lots intermédiaires. Un
-livre de plusieurs lots donne donc autant de messages. Cette obligation
+pdf de plusieurs lots donne donc autant de messages. Cette obligation
 existe parce que l'affichage de l'application replie le résultat d'une
 commande : sans ce message, un lot terminé est indiscernable d'un lot encore
 en cours.
@@ -145,6 +166,7 @@ Rapporte le nombre total de mentions extraites et le nombre de chunks
 ignorés.
 
 **Contrôles** (`_rag_lib/checks.py`) :
+
 - **Entrée** (code `1` si échec) : `chunks.json` valide, `/rag-chunking`
   terminé, CLI `claude` disponible dans le PATH.
 - **Sortie bloquante** (code `2`, étape `failed`, **arrête-toi avant
