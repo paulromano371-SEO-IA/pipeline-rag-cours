@@ -3,7 +3,7 @@ name: rag-index
 description: >-
   Embedde et indexe les chunks (produits par /rag-chunking) dans la base
   vectorielle locale (Chroma).
-  Usage: /rag-index <pdf_condense_ou_document_id>.
+  Usage: /rag-index [<pdf_condense_ou_document_id>] (sans argument : liste les pdf à indexer).
   Cinquième étape du pipeline RAG.
 ---
 
@@ -17,6 +17,27 @@ diagramme) sont exclus — critère exact (`_rag_lib/quality.py`,
 `is_noise_text`) : un chunk d'au moins 60 caractères dont moins de 30% des
 caractères non-espace sont alphabétiques. Script déterministe, aucun appel
 LLM.
+
+## Sans argument : lister les pdf
+
+Lance, en premier plan :
+
+```bash
+"<racine_projet>/.venv-rag/Scripts/python.exe" "<racine_projet>/.claude/skills/rag-index/scripts/lib/lister_a_indexer.py"
+```
+
+Liste les pdf de `corpuscondense/` prêts pour `/rag-index` : `chunking`
+à `done` dans `status.json`, et `indexation_vectorielle` pas encore `done`.
+Lecture seule.
+
+Présente la liste dans la réponse, en Markdown numéroté, **hors de tout bloc de code**, avec les noms exacts.
+
+- **Sans `--all`** : attends le choix de l’utilisateur :
+  - **Numéro** : relance la liste pour avoir l’état à jour, puis prends le pdf portant ce numéro. Numéro absent : signale-le et redemande.
+  - **Nom** : cherche le pdf dans `corpuscondense/` (insensible à la casse, correspondance exacte ou sous-chaîne unique). Zéro ou plusieurs correspondances : signale-le et redemande.
+- **Avec `--all`** : Traite les pdf de la liste **un par un, dans l’ordre**. Annonce chaque pdf en une ligne (numéro, nom, `document_id`), puis, une fois la liste épuisée, affiche un tableau récapitulatif : une ligne par pdf, avec son verdict et son `document_id`.
+
+Le pdf choisi se traite ensuite avec le PDF `corpuscondense/<nom>.pdf` (ou son `document_id`) comme argument, décrit ci-dessous.
 
 ## Interpréteur Python
 
@@ -84,7 +105,7 @@ jamais les ids qui ne sont plus fournis).
 
 Base vectorielle persistée dans `<racine_projet>/rag_data/db/vector/`
 (**base UNIQUE, commune à tout le corpus** — chaque document y ajoute ses
-chunks sans écraser les autres, jamais une base par livre). Le `document_id`
+chunks sans écraser les autres, jamais une base par pdf). Le `document_id`
 stable (calculé à l'extraction, stocké dans `meta.json`) identifie ce
 document dans la base. `status.json` mis à jour.
 
@@ -106,6 +127,7 @@ nombre de chunks ignorés comme bruit, nom du modèle d'embedding utilisé —
 volontaire, pas un défaut.
 
 **Contrôles** (`_rag_lib/checks.py`) :
+
 - **Entrée** (code `1` si échec) : `chunks.json` valide et non vide,
   `/rag-chunking` terminé, `document_id` cohérent avec `meta.json`, au moins
   un chunk indexable.
