@@ -1,16 +1,6 @@
 """PreToolUse hook (matcher: Bash) — bloque l'exécution en arrière-plan des
 scripts des skills du projet.
 
-Deux motifs, selon le skill (détail : /ragpipeline, section « Pourquoi le
-foreground ») :
-- contention de `claude -p` : /cours-condense, /rag-nottext, /rag-concepts,
-  /rag-graphe et l'audit de /rag-integrity font des appels `claude -p`
-  headless synchrones qui, en arrière-plan ou en parallèle d'une autre étape,
-  entrent en contention avec la session appelante et expirent au bout de 120s ;
-- écriture concurrente : /rag-extraction, /rag-chunking, /rag-index,
-  /create-content et /publish-content écrivent sur des fichiers ou bases
-  partagés.
-
 Ce hook ne bloque QUE l'exécution en arrière-plan (tool_input.run_in_background
 == true) d'une commande référençant un dossier .claude/skills/<skill>/ (tous
 les skills du projet, sans liste de noms) — la même commande en foreground
