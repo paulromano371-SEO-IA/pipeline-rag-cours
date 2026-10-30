@@ -1,4 +1,4 @@
-"""Publie un article genere par /create-content (rag_data/content/<slug>/)
+"""Publie un article genere par /create-content (rag_data/content/work/<slug>/)
 sur WordPress via l'API REST (wp-json), images comprises.
 
 Pour chaque image referencee dans article.md :
@@ -23,7 +23,7 @@ les rendre.
 Usage :
     publish_to_wordpress.py <slug> [--dry-run]
 
-<slug> : nom du dossier sous rag_data/content/ (celui produit par
+<slug> : nom du dossier sous rag_data/content/work/ (celui produit par
 /create-content). Necessite un fichier .env a la racine du projet avec
 WP_URL, WP_USER, WP_APP_PASSWORD (voir .env.example).
 
@@ -43,6 +43,7 @@ import html
 import json
 import re
 import sys
+from datetime import datetime
 from pathlib import Path
 
 for _stream in (sys.stdout, sys.stderr):
@@ -55,12 +56,14 @@ from dotenv import dotenv_values
 from markdown_it import MarkdownIt
 
 ROOT = Path(__file__).resolve().parents[4]
-CONTENT_DIR = ROOT / "rag_data" / "content"
+CONTENT_DIR = ROOT / "rag_data" / "content" / "work"
+PUBLISHED_DIR = ROOT / "rag_data" / "content" / "published"  # traces : published/<slug>.json
+CONTENT_INDEX = ROOT / "rag_data" / "content" / "INDEX.md"  # colonne « Article publié »
 
-# Sommaire cliquable : les ancres du sommaire (ecrit par create-content/toc.py)
+# Sommaire cliquable : les ancres du sommaire (ecrit par create-content/scripts/lib/toc.py)
 # pointent vers des `id` que le convertisseur Markdown ne pose pas sur les H2 ;
 # on les ajoute ici avec LA MEME fonction, pour que liens et ancres coincident.
-sys.path.insert(0, str(ROOT / ".claude" / "skills" / "create-content" / "scripts"))
+sys.path.insert(0, str(ROOT / ".claude" / "skills" / "create-content" / "scripts" / "lib"))
 import toc as toc_mod  # noqa: E402
 import make_cover as make_cover_mod  # noqa: E402  (champs WP de la couverture)
 ENV_PATH = Path(__file__).resolve().parent / ".env"
@@ -406,9 +409,37 @@ def create_post(cfg: dict, frontmatter: dict, content_html: str,
     return resp.json()
 
 
+def is_published(slug: str) -> bool:
+    """Publie = trace published/<slug>.json presente (ecrite apres chaque creation de brouillon)."""
+    return (PUBLISHED_DIR / f"{slug}.json").exists()
+
+
+def marquer_publie_dans_index(slug: str) -> None:
+    """Passe a « Oui » la colonne « Article publié » de la ligne du slug dans rag_data/content/INDEX.md."""
+    if not CONTENT_INDEX.exists():
+        return
+    lignes = CONTENT_INDEX.read_text(encoding="utf-8").splitlines()
+    marque = f"| `{slug}` |"
+    for i, l in enumerate(lignes):
+        if l.startswith("| 20") and marque in l:
+            lignes[i] = re.sub(r"\|\s*(Oui|Non)\s*\|$", "| Oui |", l)
+            break
+    CONTENT_INDEX.write_text("\n".join(lignes) + "\n", encoding="utf-8")
+
+
+def list_unpublished() -> None:
+    """Articles de rag_data/content/work/ (avec article.md) sans trace de publication."""
+    slugs = sorted(p.name for p in CONTENT_DIR.iterdir()
+                   if p.is_dir() and (p / "article.md").exists() and not is_published(p.name))
+    print(f"Articles non publies : {len(slugs)}")
+    for n, slug in enumerate(slugs, 1):
+        print(f"{n}. {slug}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("slug")
+    parser.add_argument("slug", nargs="?", help="dossier de rag_data/content/work/ ; sans slug, liste les non publies")
+    parser.add_argument("--list", action="store_true", help="Liste les articles non publies et sort.")
     parser.add_argument("--dry-run", action="store_true",
                          help="N'ecrit rien sur WordPress : affiche ce qui serait envoye "
                               "(les images deja presentes sont quand meme detectees, en lecture seule).")
@@ -416,6 +447,10 @@ def main() -> None:
                          help="Ne cherche pas les images deja presentes dans la mediatheque : "
                               "uploade toutes les images.")
     args = parser.parse_args()
+
+    if args.list or not args.slug:
+        list_unpublished()
+        return
 
     cfg = None if args.dry_run and not ENV_PATH.exists() else load_wp_config()
 
@@ -437,7 +472,7 @@ def main() -> None:
             continue
         meta = image_meta.get(rel, {})
         description = meta.get("alt", img["alt"])
-        # Jamais de mention de la source (livre, section) dans les champs
+        # Jamais de mention de la source (pdf, section) dans les champs
         # Texte alternatif / Legende / Description de la mediatheque WP.
         print(f"- {rel}")
         media = upload_media(
@@ -481,6 +516,22 @@ def main() -> None:
     print("Statut : draft")
     print(f"Post ID : {post.get('id')}")
     print(f"Lien : {post.get('link', post.get('guid', {}).get('rendered', '(dry-run)') if isinstance(post.get('guid'), dict) else '')}")
+
+    if not args.dry_run:
+        # Trace de publication : published/<slug>.json (6 champs, meme format que les traces reconstruites)
+        PUBLISHED_DIR.mkdir(parents=True, exist_ok=True)
+        trace = PUBLISHED_DIR / f"{args.slug}.json"
+        trace.write_text(json.dumps({
+            "folder": args.slug,
+            "title": frontmatter.get("title", ""),
+            "wp_post_id": post.get("id"),
+            "wp_status": post.get("status", "draft"),
+            "url": post.get("link"),
+            "date": (datetime.strptime(post["date"], "%Y-%m-%dT%H:%M:%S") if post.get("date")
+                     else datetime.now()).strftime("%Y%m%d-%H%M%S"),
+        }, ensure_ascii=False, indent=1), encoding="utf-8")
+        print(f"Trace : {trace.relative_to(ROOT)}")
+        marquer_publie_dans_index(args.slug)
 
 
 if __name__ == "__main__":

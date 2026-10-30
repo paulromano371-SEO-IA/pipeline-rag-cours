@@ -2,7 +2,7 @@
 name: publish-content
 description: >-
   Publie sur WordPress un article généré par /create-content
-  (rag_data/content/<slug>/article.md + images/) : uploade chaque image avec
+  (rag_data/content/work/<slug>/article.md + images/) : uploade chaque image avec
   son Texte alternatif, sa Légende et sa Description renseignés à partir du
   pipeline RAG, puis crée l'article en brouillon. Usage : /publish-content
   <slug> (ex. /publish-content
@@ -12,12 +12,18 @@ description: >-
 # /publish-content — Publication d'un article vers WordPress
 
 `/publish-content <slug>` envoie sur WordPress, via l'API REST, un article
-déjà produit par `/create-content` (dossier `rag_data/content/<slug>/`).
+déjà produit par `/create-content` (dossier `rag_data/content/work/<slug>/`).
 `<slug>` est le nom de ce dossier (identique au `slug` du frontmatter de
 `article.md`). Si l'utilisateur invoque la commande sans `<slug>` (ou avec un
-slug qui ne correspond à aucun dossier), liste le contenu de
-`rag_data/content/` sous forme de liste **numérotée** (`1.`, `2.`, ...,
-jamais à puces) et demande-lui lequel publier plutôt que de deviner.
+slug qui ne correspond à aucun dossier), lance le script sans argument (ou avec
+`--list`) : il affiche **uniquement les articles non encore publiés**, c'est-à-dire
+ceux sans trace `rag_data/content/published/<slug>.json`, sous forme de liste
+**numérotée** (`1.`, `2.`, ..., jamais à puces). Relaie cette liste telle quelle
+et demande lequel publier plutôt que de deviner.
+
+```bash
+"<racine_projet>/.venv-rag/Scripts/python.exe" "<racine_projet>/.claude/skills/publish-content/scripts/publish_to_wordpress.py" --list
+```
 
 `<racine_projet>` (utilisé partout ci-dessous) = le dossier qui contient
 `.claude/` — **pas** `.claude/skills/publish-content/`. Localise-le en
@@ -39,7 +45,7 @@ Toute la logique est dans `scripts/publish_to_wordpress.py` de cette skill :
      l'article pour ne pas être dupliquée.
    - **Description** = la description technique détaillée du pipeline RAG
      (`dossier.json`). **Aucun champ (alt, légende, description) ne mentionne
-     la source** (livre, section) : elle n'est jamais publiée.
+     la source** (pdf, section) : elle n'est jamais publiée.
    - **Vérifie d'abord si l'image est déjà dans la médiathèque WP** : recherche
      par nom de fichier (`<nom>.png`, `<nom>-1.png` ajouté par WP en cas de
      doublon, `<nom>-scaled.png`). Le nom seul suffit : aucun téléchargement
@@ -55,7 +61,7 @@ Toute la logique est dans `scripts/publish_to_wordpress.py` de cette skill :
    `<!--src:...-->`.
 4. Crée le post WordPress **en brouillon** (titre, contenu, extrait =
    description SEO du frontmatter, slug). L'image mise en avant est
-   `<slug>.png` (générée par `/create-content`, étape 7), uploadée avec ses
+   `<slug>.png` (générée par `/create-content`, étape 6), uploadée avec ses
    trois champs toujours remplis (jamais de légende vide) : Texte alternatif
    = titre de l'article ; Légende =
    titre de l'article ; Description =
@@ -129,6 +135,14 @@ Une fois confirmé par l'utilisateur, relance sans `--dry-run` :
 Le script crée toujours l'article en **brouillon** — il n'existe aucune
 option pour le publier en ligne directement, par choix délibéré de
 l'utilisateur : la mise en ligne se fait à la main, dans WordPress.
+
+**Trace de publication** : après chaque création réussie (hors `--dry-run`),
+le script écrit `rag_data/content/published/<slug>.json`. Contenu, 6 champs :
+`folder`, `title`, `wp_post_id`, `wp_status` (`draft`), `url` (lien du brouillon),
+`date` (date de création du post WordPress, `AAAAMMJJ-HHMMSS`). Le fichier est
+écrasé si l'article est republié.
+
+Le script passe aussi la colonne « Article publié » de la ligne du slug dans `rag_data/content/INDEX.md` à « Oui ».
 
 **Relaie intégralement la sortie brute du script** (codes HTTP, IDs media,
 lien du post créé). En cas d'erreur HTTP (code hors 200/201), le script
