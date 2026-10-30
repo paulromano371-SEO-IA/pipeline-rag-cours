@@ -61,7 +61,7 @@ Sortie machine
   un jugement (nom, type, alias, extraits de chunks réels) — c'est l'entrée
   de `audit_lot.py`, qui ne relit jamais le graphe Kuzu lui-même.
 
-  --max-items (défaut 300, 0 = illimité) plafonne le nombre TOTAL d'items,
+  --max-items (défaut 1000, 0 = illimité) plafonne le nombre TOTAL d'items,
   toutes catégories confondues — indépendant de --max-shared/--sample/
   --max-pairs, qui ne bornent que l'affichage (et les items) de CHAQUE
   section prise séparément. Sans ce plafond global, un corpus à beaucoup de
@@ -72,7 +72,7 @@ Usage:
     python report.py [--out rapport.md] [--sample 25] [--seed 0]
         (par défaut, --out vaut rag_data/audit/rapport_graphe_<AAAAMMJJ_HHMMSS>.md)
         [--max-shared 60] [--max-pairs 40] [--near-threshold 0.80]
-        [--intra-threshold 0.88] [--hub-share 0.10] [--max-items 300]
+        [--intra-threshold 0.88] [--hub-share 0.10] [--max-items 1000]
         [--history rag_data/audit/historique.json] [--no-history]
 """
 from __future__ import annotations
@@ -109,12 +109,12 @@ _HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
 # ---------------------------------------------------------------------------
 
 def _resolution_thresholds() -> tuple[float, float]:
-    """Seuils de `entity_resolution.py` lus dans son source (sans l'importer :
+    """Seuils de `rag-graphe/scripts/lib/resolution.py` lus dans son source (sans l'importer :
     il tire sentence-transformers/torch) pour rester synchronisés avec lui."""
-    entity_resolution_path = (
-        Path(__file__).resolve().parents[2] / "rag-graphe" / "scripts" / "entity_resolution.py"
+    resolution_path = (
+        Path(__file__).resolve().parents[2] / "rag-graphe" / "scripts" / "lib" / "resolution.py"
     )
-    text = entity_resolution_path.read_text(encoding="utf-8")
+    text = resolution_path.read_text(encoding="utf-8")
     merge = re.search(r"^MERGE_THRESHOLD\s*=\s*([0-9.]+)", text, re.MULTILINE)
     ambiguous = re.search(r"^AMBIGUOUS_THRESHOLD\s*=\s*([0-9.]+)", text, re.MULTILINE)
     return (float(merge.group(1)) if merge else 0.92, float(ambiguous.group(1)) if ambiguous else 0.80)
@@ -486,9 +486,9 @@ def part1(graph: dict, hub_share: float) -> tuple[list[str], list[str], list[dic
         doc_shares = {d: cnt / chunks_per_doc[d] for d, cnt in per_doc.items()}
         share = max(doc_shares.values(), default=0.0)
         if share >= hub_share:
-            # Le livre où extraire l'exemple doit être celui qui justifie le
+            # Le pdf où extraire l'exemple doit être celui qui justifie le
             # statut de hub (la plus grande PART, "Part max" affichée) — jamais
-            # celui qui a le plus de mentions BRUTES, qui peut être un livre
+            # celui qui a le plus de mentions BRUTES, qui peut être un pdf
             # différent et bien plus gros où le concept n'est pas remarquable.
             top_doc = max(doc_shares, key=doc_shares.get)
             hubs.append({
@@ -506,13 +506,13 @@ def part1(graph: dict, hub_share: float) -> tuple[list[str], list[str], list[dic
     if hubs:
         out += ["", "Un hub très générique (ex. \"modèle\", \"données\") relie tout à tout : bruit pour l'expansion par concept."]
         signals.append(f"{len(hubs)} concept(s) hub(s) >= {hub_share:.0%} : vérifier qu'ils ne sont pas trop génériques (1.3)")
-    # Item d'audit PAR (concept, livre) où le seuil est franchi, pas par
-    # concept seul : un concept peut être hub dans plusieurs livres à la fois
-    # (ex. "llm" à 49% dans un livre ET 27% dans un autre) avec potentiellement
+    # Item d'audit PAR (concept, pdf) où le seuil est franchi, pas par
+    # concept seul : un concept peut être hub dans plusieurs pdfs à la fois
+    # (ex. "llm" à 49% dans un pdf ET 27% dans un autre) avec potentiellement
     # une généricité différente dans chacun — un seul verdict global, basé sur
-    # un seul extrait d'un seul livre, masquerait cette différence. Le tableau
+    # un seul extrait d'un seul pdf, masquerait cette différence. Le tableau
     # 1.3 ci-dessus reste lui agrégé (une ligne par concept) : seul l'audit se
-    # décompose par livre.
+    # décompose par pdf.
     for h in shown_hubs:
         hub_docs = sorted(d for d, s in h["doc_shares"].items() if s >= hub_share)
         for doc in hub_docs:
@@ -632,7 +632,7 @@ def compute_metrics(graph: dict, args, merge_threshold: float, ambiguous_thresho
     cross, same = near_pairs(graph, docs_of_concept, (args.near_threshold, args.intra_threshold))
     missed = [(sim, a, b) for sim, a, b in cross if sim >= merge_threshold]
 
-    # mentions par (livre, concept) : sert à déterminer, pour CE livre précisément,
+    # mentions par (pdf, concept) : sert à déterminer, pour CE pdf précisément,
     # si un concept y atteint le seuil de hub (même critère que 1.3, mais localisé)
     doc_concept_mentions: dict[tuple[str, str], int] = defaultdict(int)
     for chunk_id, concept_id in mentions:
@@ -1013,7 +1013,7 @@ def main() -> int:
     parser.add_argument("--hub-share", type=float, default=0.10, help="part de chunks d'un livre à partir de laquelle un concept est un hub (défaut 0.10)")
     parser.add_argument("--history", type=Path, default=paths.AUDIT_DIR / "historique.json", help="fichier d'historique pour le delta entre rapports (défaut rag_data/audit/historique.json)")
     parser.add_argument("--no-history", action="store_true", help="ne pas lire ni écrire le fichier d'historique")
-    parser.add_argument("--max-items", type=int, default=300, help="plafond TOTAL d'items d'audit toutes catégories confondues, indépendant de --max-shared/--sample/--max-pairs (défaut 300, 0 = illimité)")
+    parser.add_argument("--max-items", type=int, default=1000, help="plafond TOTAL d'items d'audit toutes catégories confondues, indépendant de --max-shared/--sample/--max-pairs (défaut 1000, 0 = illimité)")
     args = parser.parse_args()
     paths.AUDIT_DIR.mkdir(parents=True, exist_ok=True)
     if args.out is None:

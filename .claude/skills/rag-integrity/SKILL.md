@@ -3,15 +3,15 @@
 Transversal au corpus (pas une étape de `/ragpipeline`, pas liée à un
 `document_id` précis) : évalue l'état du graphe Kuzu partagé
 (`rag_data/db/graph/`) après une ou plusieurs ingestions. À lancer à la
-demande — typiquement après `/ragpipeline` sur un nouveau livre, ou pour
+demande — typiquement après `/ragpipeline` sur un nouveau pdf, ou pour
 vérifier le corpus dans son ensemble.
 
 Deux étapes strictement séparées, toujours dans cet ordre :
 
 1. **`report.py`** — entièrement déterministe (AUCUN appel `claude -p`).
-   Recalcule les métriques structurelles du graphe (volumes par livre,
+   Recalcule les métriques structurelles du graphe (volumes par pdf,
    concepts hubs, alias suspects, paires jamais fusionnées, doublons
-   intra-livre...) et repère, avec preuves (extraits de chunks réels), les
+   intra-pdf...) et repère, avec preuves (extraits de chunks réels), les
    cas ambigus qui méritent un jugement. Écrit un rapport Markdown lisible
    par un humain ET un `.json` structuré (`audit_items`) lisible par
    l'étape 2 — cette dernière ne relit jamais le graphe Kuzu elle-même.
@@ -64,7 +64,7 @@ item signalé).
 ```
 
 Options utiles : `--hub-share 0.10` (seuil de 1.3), `--intra-threshold 0.88`
-(seuil de 2.4), `--sample 25` (taille des échantillons de 2.2), `--max-items 300`
+(seuil de 2.4), `--sample 25` (taille des échantillons de 2.2), `--max-items 1000`
 (plafond TOTAL d'items d'audit toutes catégories confondues, indépendant des
 bornes par section — voir plus bas), `--no-history` (désactive le delta avec
 le rapport précédent). Voir la docstring du script pour la liste complète —
@@ -77,13 +77,13 @@ ne jamais la dupliquer ici.
   l'étape 2 ;
 - `historique.json` — un instantané chiffré par run, pour le delta affiché
   en tête de chaque rapport ("le graphe s'améliore-t-il ou se dégrade-t-il
-  avec ce nouveau livre, et pourquoi").
+  avec ce nouveau pdf, et pourquoi").
 
-**`--max-items` (défaut 300)** plafonne le nombre TOTAL d'items d'audit,
+**`--max-items` (défaut 1000)** plafonne le nombre TOTAL d'items d'audit,
 toutes catégories confondues — indépendant de `--max-shared`/`--sample`/
 `--max-pairs`, qui ne bornent que l'affichage (et les items) de CHAQUE
 section prise séparément. Sans ce plafond global, un corpus à beaucoup de
-livres accumule des items sans limite, donc sans limite sur le coût total
+pdfs accumule des items sans limite, donc sans limite sur le coût total
 en appels `claude -p` de l'étape 2. Le dépassement retire des items en
 répartissant équitablement entre catégories (jamais une catégorie vidée au
 profit d'une autre) et le signale dans "Signaux à examiner".
@@ -108,7 +108,7 @@ par item (id stable), avec **deux états seulement** :
 Effets :
 - `report.py` n'écrit dans `audit_items` que les items **nouveaux ou au
   contexte modifié** ; il indique combien sont déjà validés (`n_settled_ok`)
-  et liste les signalements ouverts (`open_flags`). Un nouveau livre ne
+  et liste les signalements ouverts (`open_flags`). Un nouveau pdf ne
   génère donc que les items qui touchent ses concepts, pas tout le corpus.
 - `audit_run.py` (via `audit_lot.py`) enregistre chaque verdict dans le
   registre. Le registre est créé automatiquement au premier usage à partir des
@@ -120,7 +120,7 @@ Effets :
   graphe) ; `audit_accept.py --list` liste les signalements ouverts du registre
   (dont certains peuvent ne plus figurer dans le dernier rapport).
 - **Hubs (1.3)** : métrique du rapport uniquement, plus jugés par le LLM (un
-  hub est presque toujours le sujet central d'un livre).
+  hub est presque toujours le sujet central d'un pdf).
 - `--force` (premier lot) rejuge tous les items du rapport et remplace leurs
   entrées du registre.
 
@@ -152,9 +152,9 @@ commande reprend là où le lot précédent s'est arrêté.
 item portant le MÊME id (même concept) ET le MÊME contexte (mêmes extraits,
 mêmes alias) qu'un item déjà jugé dans un rapport PRÉCÉDENT reprend
 directement ce verdict, sans rappeler `claude -p`. Sans ça, chaque nouveau
-rapport (ex. après l'ajout d'un livre au corpus) rejugerait l'intégralité
+rapport (ex. après l'ajout d'un pdf au corpus) rejugerait l'intégralité
 des ~200 items déjà tranchés lors d'audits précédents, même ceux que le
-nouveau livre ne concerne pas — un coût en appels `claude -p` qui grandirait
+nouveau pdf ne concerne pas — un coût en appels `claude -p` qui grandirait
 à chaque ingestion au lieu de rester proportionnel à ce qui a réellement
 changé. Un item dont le contexte a changé (nouvel extrait, nouvel alias)
 n'est jamais repris tel quel : il est rejugé, l'ancienne preuve n'étant plus
@@ -178,8 +178,9 @@ que `/rag-nottext`/`/rag-concepts`/`/rag-graphe`. Sur `[BLOQUANT]` ou
   mis à jour après CHAQUE item (comme `concepts.json` pour `/rag-concepts`) :
   une interruption ne perd jamais plus d'un item ;
 - `rapport_graphe_<...>_audit.md` — synthèse finale (écrite au dernier lot
-  uniquement) : par catégorie (1.3, 2.1, 2.2, 2.3, 2.4, 2.5), le nombre
-  d'items jugés et la liste de ceux marqués comme problématiques
+  uniquement), qui s'ouvre sur le **tableau « Bilan de l'audit »** (voir plus
+  bas), puis, par catégorie (1.3, 2.1, 2.2, 2.3, 2.4, 2.5), le nombre
+  d'items jugés et la liste des vrais problèmes (verdict à signaler, confirmé)
   (`generique`, `fusion_a_tort`, `fusion_manquee`, `doublon`, `incoherent`)
   avec la raison donnée par Claude.
 
@@ -192,10 +193,10 @@ pour le détail exact des instructions envoyées à Claude :
 | Catégorie | Question posée à Claude | Verdict "à signaler" |
 |---|---|---|
 | 1.3 Hubs | _(plus jugés : métrique du rapport seulement, voir « Registre des décisions »)_ | — |
-| 2.1 Concepts partagés | Cette fusion inter-livres déjà faite est-elle correcte ? | `fusion_a_tort` |
+| 2.1 Concepts partagés | Cette fusion inter-pdfs déjà faite est-elle correcte ? | `fusion_a_tort` |
 | 2.2 Alias suspects | Cet alias désigne-t-il vraiment le même concept ? | `fusion_a_tort` |
 | 2.3 Fusions manquées | Ces deux concepts jamais fusionnés sont-ils en fait identiques ? | `fusion_manquee` |
-| 2.4 Doublons intra-livre | Ces deux concepts proches du même livre sont-ils un doublon ? | `doublon` |
+| 2.4 Doublons intra-pdf | Ces deux concepts proches du même pdf sont-ils un doublon ? | `doublon` |
 | 2.5 Alias incohérents | Cette forme partagée par 2 concepts est-elle une erreur de résolution ? | `incoherent` |
 
 En 2.1 à 2.5, `indetermine` s'ajoute aux verdicts de chaque ligne (preuve insuffisante, voir « Règles de jugement »).
@@ -213,7 +214,7 @@ en cas de doute, **ne pas accuser**) :
    `absent` (rien trouvé : l'extrait est le début du chunk et ne prouve rien).
    Pour 2.2, `alias_origine` donne l'endroit où l'alias suspect a été
    **extrait** (mention telle qu'écrite, `sens_de_la_mention`, extrait), lu dans
-   `concepts.json` de chaque livre : c'est la vraie preuve d'une fusion, pas un
+   `concepts.json` de chaque pdf : c'est la vraie preuve d'une fusion, pas un
    chunk quelconque du concept. Liste vide (ex. `work/` vidé) = preuve manquante.
 2. **Verdict `indetermine`** (2.1 à 2.5). Le juge ne rend le verdict « à
    signaler » que si les données montrent positivement le problème ; une
@@ -230,7 +231,7 @@ en cas de doute, **ne pas accuser**) :
    signalé seulement (~15 %).
 
 La synthèse (`_audit.md`) affiche, par catégorie, les verdicts finaux, le
-nombre de signalements écartés en 2e passe (les faux positifs évités) et la
+nombre de fausses alertes écartées en 2e passe (les faux positifs évités) et la
 liste des `indetermine` avec ce qui manque.
 
 Chaque concept du contexte porte aussi son **`sens`** (définition courte
@@ -250,22 +251,47 @@ Chaque jugement se base **uniquement sur les extraits de chunks réels**
 fournis par `report.py` (jamais sur le seul nom du concept, ni sur un extrait
 dont `terme` vaut `absent`) — c'est ce qui
 permet une précision fine (ex. distinguer un hub légitime comme `embedding`,
-réutilisé à l'identique dans plusieurs livres, d'un hub genuinement vague).
+réutilisé à l'identique dans plusieurs pdfs, d'un hub genuinement vague).
 
 **(Historique — 1.3 n'est plus audité, voir « Registre des décisions » ; le code de jugement reste pour relire d'anciens rapports.)
-1.3 était audité par (concept, livre), pas par concept seul** : un concept
-peut franchir le seuil de hub dans plusieurs livres à la fois (ex. `llm` à
-49% dans un livre ET 27% dans un autre) avec une généricité potentiellement
+1.3 était audité par (concept, pdf), pas par concept seul** : un concept
+peut franchir le seuil de hub dans plusieurs pdfs à la fois (ex. `llm` à
+49% dans un pdf ET 27% dans un autre) avec une généricité potentiellement
 différente dans chacun. Le tableau 1.3 du rapport reste agrégé (une ligne
-par concept, pour rester lisible), mais chaque livre où le seuil est franchi
+par concept, pour rester lisible), mais chaque pdf où le seuil est franchi
 reçoit son propre item d'audit, son propre extrait et son propre verdict —
-jamais un seul jugement appliqué à tort à tous les livres concernés.
+jamais un seul jugement appliqué à tort à tous les pdfs concernés.
+
+## Tableau « Bilan de l'audit » (indicateur principal)
+
+C'est le chiffre à suivre d'un audit à l'autre pour savoir si le graphe se
+dégrade. Une ligne par catégorie jugée, plus un total, calculé par
+`audit_run.py:summary_table()` à partir des verdicts (jamais recopié à la
+main) :
+
+| Catégorie | Jugés | Fausses alertes | Doutes sans verdict | Vrais problèmes |
+|---|---|---|---|---|
+
+- **Fausses alertes** : signalées en 1re passe, écartées en 2e passe sur les
+  chunks complets (`-` pour une catégorie sans 2e passe) ;
+- **Doutes sans verdict** : preuve insuffisante (verdict `indetermine`) ;
+- **Vrais problèmes** : verdict à signaler, confirmé — **dernière colonne**, la
+  plus importante.
+
+Il ne compte que les items jugés dans CET audit (nouveaux ou modifiés) ; les
+signalements d'audits précédents encore ouverts sont donnés sur la ligne sous
+le tableau. Il figure en tête de `..._audit.md` ET dans la sortie du dernier
+lot (bloc `=== BILAN DE L'AUDIT ===`, avant la ligne `[FIN]`).
+
+**Après le dernier lot (`[FIN]`), recopie ce tableau tel quel dans ton message
+du chat** (en tableau Markdown, pas seulement dans le bloc de sortie brute que
+l'application replie) : l'utilisateur doit le voir sans ouvrir de fichier.
 
 ## À la fin
 
-Résume à l'utilisateur : nombre d'items jugés par catégorie, et surtout ceux
-marqués comme problématiques (voir tableau ci-dessus) avec la raison donnée
-par Claude — c'est le livrable utile, pas juste "l'audit est terminé".
+Affiche d'abord le tableau « Bilan de l'audit » ci-dessus. Puis résume à
+l'utilisateur : les vrais problèmes (voir tableau des catégories) avec la
+raison donnée par Claude — c'est le livrable utile, pas juste "l'audit est terminé".
 Rappelle que les deux rapports (`rapport_graphe_<...>.md` et
 `..._audit.md`) restent tous les deux sous `rag_data/audit/` pour référence
 ultérieure, et que le prochain `report.py` affichera un delta par rapport à

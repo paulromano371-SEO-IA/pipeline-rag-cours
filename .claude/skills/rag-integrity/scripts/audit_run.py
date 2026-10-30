@@ -368,6 +368,46 @@ _FLAGGED = {  # verdict par catégorie qui mérite d'être mis en avant dans la 
 }
 
 
+_CATEGORY_LABELS = {
+    "1.3": "1.3 Hubs", "2.1": "2.1 Concepts partagés", "2.2": "2.2 Alias suspects",
+    "2.3": "2.3 Fusions manquées", "2.4": "2.4 Doublons intra-livre", "2.5": "2.5 Alias incohérents",
+}
+
+
+def summary_table(report: dict, verdicts: dict) -> list[str]:
+    """Tableau de bilan de l'audit, une ligne par catégorie : c'est le chiffre à
+    suivre d'un audit à l'autre pour voir si le graphe se dégrade. Colonnes :
+    Jugés ; Fausses alertes (signalées en 1re passe puis écartées sur chunks
+    complets, "-" sans 2e passe) ; Doutes sans verdict ; Vrais problèmes (verdict
+    à signaler, confirmé), DERNIÈRE colonne car la plus importante. Ne compte que
+    les items jugés dans CET audit (nouveaux ou modifiés) : les signalements
+    d'audits précédents encore ouverts sont indiqués à part sous le tableau."""
+    by_cat: dict[str, list[dict]] = {}
+    for item in report.get("audit_items", []):
+        by_cat.setdefault(item["category"], []).append(item)
+    rows, totals = [], [0, 0, 0, 0]
+    for cat in ["1.3", "2.1", "2.2", "2.3", "2.4", "2.5"]:
+        cat_items = by_cat.get(cat, [])
+        if not cat_items:
+            continue
+        judged = [verdicts[it["id"]] for it in cat_items if it["id"] in verdicts]
+        doubt = sum(1 for v in judged if v["verdict"] == "indetermine")
+        false_alarms = sum(1 for v in judged
+                           if v.get("premiere_passe", {}).get("verdict") == _FLAGGED[cat] and v["verdict"] != _FLAGGED[cat])
+        real = sum(1 for v in judged if v["verdict"] == _FLAGGED[cat])
+        for i, n in enumerate((len(judged), false_alarms if cat in CONFIRM_CATEGORIES else 0, doubt, real)):
+            totals[i] += n
+        rows.append(f"| {_CATEGORY_LABELS[cat]} | {len(judged)} | "
+                    f"{false_alarms if cat in CONFIRM_CATEGORIES else '-'} | {doubt} | {real} |")
+    if not rows:
+        return []
+    out = ["| Catégorie | Jugés | Fausses alertes | Doutes sans verdict | Vrais problèmes |", "|---|---|---|---|---|", *rows,
+           f"| **Total** | **{totals[0]}** | **{totals[1]}** | **{totals[2]}** | **{totals[3]}** |"]
+    n_open = len(report.get("open_flags") or [])
+    out += ["", f"Signalements d'audits précédents encore ouverts (non comptés ci-dessus) : {n_open}."]
+    return out
+
+
 def write_synthesis(path: Path, report: dict, verdicts: dict) -> None:
     items = report["audit_items"]
     by_cat: dict[str, list[dict]] = {}
@@ -378,6 +418,9 @@ def write_synthesis(path: Path, report: dict, verdicts: dict) -> None:
         "# Synthèse de l'audit /rag-integrity", "",
         f"{len(verdicts)}/{len(items)} item(s) jugés par Claude — voir {report.get('_source_path', '')}.", "",
     ]
+    table = summary_table(report, verdicts)
+    if table:
+        lines += ["## Bilan de l'audit", "", *table, ""]
     titles = {
         "1.3": "1.3 — Concepts hubs (généricité)",
         "2.1": "2.1 — Concepts partagés entre livres (fusion à tort ?)",
@@ -397,10 +440,10 @@ def write_synthesis(path: Path, report: dict, verdicts: dict) -> None:
         # mesure directe des faux positifs que la 2e passe a évités.
         dismissed = [(it, v) for it, v in judged
                      if v.get("premiere_passe", {}).get("verdict") == _FLAGGED[cat] and v["verdict"] != _FLAGGED[cat]]
-        summary = f"{len(judged)}/{len(cat_items)} jugés ; {len(flagged)} marqué(s) `{_FLAGGED[cat]}`"
+        summary = f"{len(judged)}/{len(cat_items)} jugés ; {len(flagged)} vrai(s) problème(s) (`{_FLAGGED[cat]}`)"
         if cat in CONFIRM_CATEGORIES:
-            summary += f" (après confirmation sur chunks complets ; {len(dismissed)} signalement(s) écarté(s) à cette étape)"
-        summary += f" ; {len(undetermined)} indéterminé(s) (preuve insuffisante)."
+            summary += f" (après confirmation sur chunks complets ; {len(dismissed)} fausse(s) alerte(s) écartée(s) à cette étape)"
+        summary += f" ; {len(undetermined)} en doute, sans verdict (preuve insuffisante)."
         lines += ["", f"## {titles[cat]}", "", summary, ""]
         if flagged:
             lines += ["| Sujet | Verdict | Raison | Confirmation |", "|---|---|---|---|"]
@@ -412,7 +455,7 @@ def write_synthesis(path: Path, report: dict, verdicts: dict) -> None:
         else:
             lines.append("_(rien à signaler dans cette catégorie)_")
         if undetermined:
-            lines += ["", "Indéterminés (à examiner à la main ou après amélioration de la preuve) :", "",
+            lines += ["", "En doute, sans verdict (à examiner à la main ou après amélioration de la preuve) :", "",
                       "| Sujet | Ce qui manque |", "|---|---|"]
             lines += [f"| {it['subject']} | {v['reason']} |" for it, v in undetermined]
     open_flags = report.get("open_flags") or []
@@ -502,6 +545,9 @@ def main() -> int:
     fail_rate = len(still_pending) / len(items) if items else 0.0
     write_synthesis(_synthesis_path(report_path), {**report, "_source_path": str(report_path)}, verdicts)
     print(f"synthèse écrite dans {_synthesis_path(report_path)}")
+    table = summary_table(report, verdicts)
+    if table:
+        print("\n=== BILAN DE L'AUDIT ===\n" + "\n".join(table) + "\n")
     if fail_rate > 0.05:
         print(f"BLOQUANT: {len(still_pending)}/{len(items)} item(s) ({fail_rate:.1%}) n'ont jamais pu être jugés (> 5 %)")
         return 2
