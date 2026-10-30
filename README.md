@@ -63,7 +63,7 @@ Chaque étape est une commande indépendante (un skill Claude Code), invocable s
 
 `/cours-condense <chemin_vers_livre.pdf>`
 
-Lit le pdf source **intégralement** (jamais un extrait) et produit un support de cours condensé en français, compilé en PDF via LaTeX. Le texte est réécrit dans un ton pédagogique, le code source et les illustrations vectorielles originales sont créées pour appuyer les explications. Aucune longueur cible n'est fixée à l'avance : le plan et la compression découlent uniquement du contenu réellement essentiel du pdf.
+Lit le pdf source **intégralement** (jamais un extrait) et produit un support de cours condensé en français, compilé en PDF via LaTeX. Le texte est réécrit dans un ton pédagogique, les codes sources et les illustrations sont créées pour appuyer les explications. Aucune longueur cible n'est fixée à l'avance : le plan et la compression découlent uniquement du contenu réellement essentiel du pdf.
 
 **Exemple de support condensé** : 
 
