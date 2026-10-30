@@ -111,13 +111,13 @@ jamais sans mettre à jour `chunk.py` en même temps.
 
 ---
 
-## 7. Lister les livres prêts (sans argument)
+## 7. Lister les pdf prêts (sans argument)
 
 ```bash
 ".venv-rag/Scripts/python.exe" ".claude/skills/rag-nottext/scripts/lib/lister_a_nottext.py"
 ```
 
-Lecture seule. Liste les livres de `corpuscondense/` dont l'extraction est
+Lecture seule. Liste les pdf de `corpuscondense/` dont l'extraction est
 valide (`status` à `done`, `verdict` à `ok`) et dont `nottext` n'est pas encore
 `done`. Sortie : liste numérotée, ou `Aucun livre a traiter.`
 
@@ -139,6 +139,6 @@ rag-nottext/
     ├── ocr_general.py                 texte d'une image par tesseract
     ├── ocr_formula.py                 transcription LaTeX d'une formule par pix2tex
     ├── lib/
-    │   └── lister_a_nottext.py        liste les livres prêts (sans argument)
+    │   └── lister_a_nottext.py        liste les pdf prêts (sans argument)
     └── tessdata/                      données tesseract (fra, eng, osd)
 ```

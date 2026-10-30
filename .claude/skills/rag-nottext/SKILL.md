@@ -51,7 +51,7 @@ mêlées à une phrase, déjà entourées de leur propre contexte de prose
 explicatif, donc déjà bien gérée par le modèle d'embedding sans description
 supplémentaire.
 
-## Sans argument : lister les livres
+## Sans argument : lister les pdf
 
 Lance, en premier plan :
 
@@ -59,7 +59,7 @@ Lance, en premier plan :
 "<racine_projet>/.venv-rag/Scripts/python.exe" "<racine_projet>/.claude/skills/rag-nottext/scripts/lib/lister_a_nottext.py"
 ```
 
-Liste les livres de `corpuscondense/` prêts pour `/rag-nottext` : extraction
+Liste les pdf de `corpuscondense/` prêts pour `/rag-nottext` : extraction
 faite avec `status` à `done` et `verdict` à `ok` dans `status.json`, et
 `nottext` pas encore `done`. Lecture seule.
 
@@ -68,11 +68,11 @@ faite avec `status` à `done` et `verdict` à `ok` dans `status.json`, et
 Présente la liste dans la réponse, en Markdown numéroté, **hors de tout bloc de code**, avec les noms exacts.
 
 - **Sans `--all`** : attends le choix de l’utilisateur :
-  - **Numéro** : relance la liste pour avoir l’état à jour, puis prends le livre portant ce numéro. Numéro absent : signale-le et redemande.
-  - **Nom** : cherche le livre dans `corpusdedepart/` (insensible à la casse, correspondance exacte ou sous-chaîne unique). Zéro ou plusieurs correspondances : signale-le et redemande.
-- **Avec `--all`** : Traite les livres de la liste **un par un, dans l’ordre**. Annonce chaque livre en une ligne (numéro, nom, `document_id`), puis, une fois la liste épuisée, affiche un tableau récapitulatif : une ligne par livre, avec son verdict et son `document_id`.
+  - **Numéro** : relance la liste pour avoir l’état à jour, puis prends le pdf portant ce numéro. Numéro absent : signale-le et redemande.
+  - **Nom** : cherche le pdf dans `corpusdedepart/` (insensible à la casse, correspondance exacte ou sous-chaîne unique). Zéro ou plusieurs correspondances : signale-le et redemande.
+- **Avec `--all`** : Traite les pdf de la liste **un par un, dans l’ordre**. Annonce chaque pdf en une ligne (numéro, nom, `document_id`), puis, une fois la liste épuisée, affiche un tableau récapitulatif : une ligne par pdf, avec son verdict et son `document_id`.
 
-Le livre choisi se traite ensuite avec le PDF `corpuscondense/<nom>.pdf` (ou son `document_id`) comme argument, décrit ci-dessous.
+Le pdf choisi se traite ensuite avec le PDF `corpuscondense/<nom>.pdf` (ou son `document_id`) comme argument, décrit ci-dessous.
 
 ## Interpréteur Python
 
@@ -221,7 +221,7 @@ jamais deux lots enchaînés sans ce message entre les deux, jamais un résumé
 condensé à la place de la sortie, y compris pour les lots intermédiaires —
 même exigence que "Obligation de relayer TOUTE la sortie du script" plus
 haut, désormais satisfaite par la sortie brute que `nottext_lot.py` réimprime
-avant sa ligne de bilan. Un livre de plusieurs lots donne donc autant de
+avant sa ligne de bilan. Un pdf de plusieurs lots donne donc autant de
 messages. Cette obligation existe parce que l'affichage de l'application
 replie le résultat d'une commande : sans ce message, un lot terminé est
 indiscernable d'un lot encore en cours.

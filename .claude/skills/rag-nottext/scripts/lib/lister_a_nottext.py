@@ -1,15 +1,15 @@
-"""Liste les livres a traiter pour /rag-nottext (commande sans argument).
+"""Liste les pdf a traiter pour /rag-nottext (commande sans argument).
 
 Usage:
     python lister_a_nottext.py
 
-Pour chaque PDF condense de corpuscondense/, affiche le livre s'il est pret
+Pour chaque PDF condense de corpuscondense/, affiche le pdf s'il est pret
 pour /rag-nottext, c'est-a-dire si toutes ces conditions sont vraies :
     - rag_data/work/<document_id>/status.json existe
     - extraction.status de status.json est "done"
     - extraction.metadata.verdict de status.json est "ok"
     - nottext.status de status.json n'est pas "done"
-(Un livre sans status.json, ou dont l'extraction n'est pas done/ok, est exclu.)
+(Un pdf sans status.json, ou dont l'extraction n'est pas done/ok, est exclu.)
 
 Ne lance aucun traitement : lecture seule.
 """
