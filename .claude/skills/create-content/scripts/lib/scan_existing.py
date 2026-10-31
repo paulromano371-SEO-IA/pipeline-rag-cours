@@ -171,6 +171,7 @@ def main() -> int:
         args.expression,
         db_path=Path(args.db_path),
         graph_db_path=Path(args.graph_db_path),
+        read_only=True,
         search_top_k=DEFAULT_SEARCH_TOP_K,
         max_sections=DEFAULT_MAX_SECTIONS,
         result_cap=DEFAULT_RESULT_CAP,

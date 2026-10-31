@@ -23,6 +23,7 @@ CHAMPS = ("title", "description", "slug", "keywords", "reading_time", "level", "
 ESSENTIEL = "## L'essentiel en 30 secondes"
 CITATION_RE = re.compile(r"<!--src:([^>]*)-->")
 CHUNK_RE = re.compile(r"S\d{3}")
+CODE_BLOCK_RE = re.compile(r"^```.*?^```[ \t]*$", re.MULTILINE | re.DOTALL)
 
 CONTRAT_SORTIE = (
     "\n\nFORMAT DE RÉPONSE (imposé par le script, ne rien ajouter) : réponds UNIQUEMENT avec le contenu complet "
@@ -31,9 +32,21 @@ CONTRAT_SORTIE = (
 )
 
 
+def retirer_enveloppe(raw: str) -> str:
+    """Retire seulement le bloc de code qui entoure toute la réponse (```markdown … ```).
+
+    Les clôtures internes (blocs de code de l'article) sont conservées : sinon le contrôle
+    des titres H1 lirait les commentaires « # » des blocs de code comme des titres."""
+    texte = raw.strip()
+    lignes = texte.split("\n")
+    if len(lignes) >= 2 and lignes[0].strip().startswith("```") and lignes[-1].strip() == "```":
+        return "\n".join(lignes[1:-1]).strip()
+    return texte
+
+
 def make_parser(slug: str, identifiants: set[str]):
     def parse(raw: str) -> str:
-        texte = raw.strip()
+        texte = raw.replace("\r\n", "\n").strip()
         if not texte.startswith("---\n"):
             raise ValueError("frontmatter absent (pas de « --- » en tête)")
         fin = texte.find("\n---", 4)
@@ -47,7 +60,9 @@ def make_parser(slug: str, identifiants: set[str]):
         m = re.search(r"^slug\s*:\s*\"?([^\"\n]+?)\"?\s*$", frontmatter, re.MULTILINE)
         if not m or m.group(1).strip() != slug:
             raise ValueError(f"slug du frontmatter différent de « {slug} »")
-        if len(re.findall(r"^# ", corps, re.MULTILINE)) != 1:
+        # Les lignes « # » d'un bloc de code (commentaires Python, shell…) ne sont pas des titres.
+        hors_code = CODE_BLOCK_RE.sub("", corps)
+        if len(re.findall(r"^# ", hors_code, re.MULTILINE)) != 1:
             raise ValueError("il faut exactement un titre H1")
         if ESSENTIEL not in corps:
             raise ValueError(f"section « {ESSENTIEL} » absente")
@@ -92,6 +107,7 @@ def main() -> int:
             ),
             parse=make_parser(slug, identifiants),
             dossier=dossier,
+            nettoyer=retirer_enveloppe,
         )
     except EtapeError as exc:
         statut("4", False, f"article non produit : {exc}")

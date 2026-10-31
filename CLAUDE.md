@@ -24,9 +24,9 @@ Lors d'une session ou nous avons des échanges ( hors commande SKILL), tu ne doi
 
 Tu ne dois JAMAIS me proposer de commiter, ou de commiter sans mon accord.
 
-## Exception : correction automatique de /rag-extraction
+## Exception : correction automatique de /rag-extraction et /create-content
 
-Pour `/rag-extraction` uniquement, quand une étape échoue ou que son contrôle renvoie des BLOQUANTS, tu corriges sans demander mon accord. Tu as le droit de modifier les scripts qui sont dans \skills\rag-extraction\scripts\lib
+Pour `/rag-extraction` et `/create-content` uniquement, quand une étape échoue ou que son contrôle renvoie des BLOQUANTS, tu corriges sans demander mon accord. Tu as le droit de modifier les scripts qui sont dans \skills\rag-extraction\scripts\lib et \skills\create-content\scripts\lib
 
 ## Nomenclatures de l'architecture idéale d'une commande SKILL
 

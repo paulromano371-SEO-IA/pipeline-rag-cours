@@ -91,15 +91,28 @@ décider ; si c'est « comment », il guide l'action pas à pas.
 - **Citations de traçabilité** : `<!--src:S012,S015-->` en fin de paragraphe
   ou juste après un bloc s'appuyant sur ces éléments du dossier. Chaque
   affirmation factuelle doit avoir sa source.
-- **Unicité** : ne reprends ni le plan, ni les phrases d'un livre, ni ceux d'un
-  voisin. Tu reformules et recomposes ; le seul verbatim autorisé, ce sont le
-  code et les formules. Pas de copier-coller d'un chunk, même retouché.
+- **Aucune mention de la source** : n'écris jamais « du livre », « le pdf »,
+  « l'auteur », « cet ouvrage », « ce chapitre », « chapitre N », « page N » ni
+  « figure N ». Énonce les faits à la première personne du savoir, sans
+  attribution.
+- **Unicité** : ne reprends ni le plan, ni les phrases d'une source, ni ceux d'un
+  voisin. Tu reformules et recomposes. Pas de copier-coller d'un chunk, même
+  retouché, sauf pour les blocs de code et les formules.
+- **Code fidèle** : chaque bloc de code est recopié caractère par caractère
+  depuis le dossier. Tu peux seulement retirer des lignes entières, remplacées
+  par une ligne `...` seule, et ajouter des commentaires autour du bloc, jamais
+  dedans. Tu n'écris jamais de « version simplifiée », tu ne renommes rien, tu
+  ne fusionnes ni ne réordonnes des lignes, et tu ne mets jamais de phrase
+  d'explication à l'intérieur d'un bloc. Une ligne qui définit une variable
+  réutilisée plus loin n'est jamais retirée.
 - **Pas d'affirmation non sourcée pour faire joli.** Une belle phrase
   fausse ou invérifiable est pire qu'une phrase simple.
 - **Code en contexte** : jamais un jeu de données ou un extrait qui
   « apparaît » sans qu'une question réelle, posée au lecteur, précède le
   premier bloc de code d'une section. La première fois qu'un extrait montre
   `In [n]:`/`Out[n]:`, explique cette convention en une phrase.
+- **Relecture finale** : vérifie que chaque bloc de code est identique à son
+  chunk, et qu'aucune mention de source n'est restée dans le texte.
 
 #### Passe de gras (dernière passe de l'étape 4)
 

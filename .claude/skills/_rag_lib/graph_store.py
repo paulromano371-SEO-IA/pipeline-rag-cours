@@ -114,10 +114,12 @@ class ConceptRecord:
 
 
 class ConceptGraph:
-    def __init__(self, db_path: Path):
-        self._db = kuzu.Database(str(db_path))
+    def __init__(self, db_path: Path, read_only: bool = False):
+        self._read_only = read_only
+        self._db = kuzu.Database(str(db_path), read_only=read_only)
         self._conn = kuzu.Connection(self._db)
-        self._ensure_schema()
+        if not read_only:
+            self._ensure_schema()
 
     def close(self) -> None:
         """Arret propre : force un CHECKPOINT (ecrit le journal dans les fichiers de
@@ -129,7 +131,8 @@ class ConceptGraph:
             return
         self._closed = True
         try:
-            self._conn.execute("CHECKPOINT")
+            if not self._read_only:
+                self._conn.execute("CHECKPOINT")
             self._conn.close()
             self._db.close()
         except Exception as exc:  # signale : une fermeture ratee ne doit pas passer inapercue

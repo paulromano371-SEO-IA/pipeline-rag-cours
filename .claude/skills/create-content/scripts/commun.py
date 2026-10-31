@@ -12,8 +12,10 @@ _sys.path.insert(0, str(next(p for p in _Path(__file__).resolve().parents if (p 
 import venv_guard  # noqa: F401
 
 import json
+import os
 import re
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -74,19 +76,37 @@ def mettre_a_jour_index(slug: str) -> None:
         f"| {datetime.now().strftime('%Y-%m-%d %H:%M')} | `{slug}` | {cell(meta.get('title', slug))} "
         f"| {cell(meta.get('level', ''))} | {cell(meta.get('reading_time', ''))} | {publie} |"
     )
-    lignes = CONTENT_INDEX.read_text(encoding="utf-8").splitlines() if CONTENT_INDEX.exists() else []
-    contenus = [l for l in lignes if l.startswith("| 20")]  # une ligne de données par contenu
-    marque = f"| `{slug}` |"
-    for i, l in enumerate(contenus):
-        if marque in l:
-            contenus[i] = ligne
-            break
-    else:
-        contenus.append(ligne)
-    # Plus récent en premier : la colonne « Mis à jour » (AAAA-MM-JJ HH:MM) se trie comme du texte.
-    contenus.sort(key=lambda l: l.split("|")[1].strip(), reverse=True)
+    # La ligne est d'abord posée dans un fichier temporaire du slug, puis recopiée dans l'index sous verrou.
+    temp = content_dir(slug) / "index_ligne.tmp"
+    temp.write_text(ligne, encoding="utf-8")
+    verrou = CONTENT_INDEX.with_name("INDEX.md.lock")
     CONTENT_INDEX.parent.mkdir(parents=True, exist_ok=True)
-    CONTENT_INDEX.write_text(entete_index(len(contenus)) + "\n".join(contenus) + "\n", encoding="utf-8")
+    for _ in range(20):  # 20 essais, espacés de 5 s
+        try:
+            os.close(os.open(verrou, os.O_CREAT | os.O_EXCL | os.O_WRONLY))  # échoue si le verrou existe déjà
+            break
+        except FileExistsError:
+            time.sleep(5)
+    else:
+        print(f"  [index] verrou occupé : ligne de `{slug}` gardée dans {temp}", file=sys.stderr)
+        return
+    try:
+        ligne = temp.read_text(encoding="utf-8").strip()
+        lignes = CONTENT_INDEX.read_text(encoding="utf-8").splitlines() if CONTENT_INDEX.exists() else []
+        contenus = [l for l in lignes if l.startswith("| 20")]  # une ligne de données par contenu
+        marque = f"| `{slug}` |"
+        for i, l in enumerate(contenus):
+            if marque in l:
+                contenus[i] = ligne
+                break
+        else:
+            contenus.append(ligne)
+        # Plus récent en premier : la colonne « Mis à jour » (AAAA-MM-JJ HH:MM) se trie comme du texte.
+        contenus.sort(key=lambda l: l.split("|")[1].strip(), reverse=True)
+        CONTENT_INDEX.write_text(entete_index(len(contenus)) + "\n".join(contenus) + "\n", encoding="utf-8")
+        temp.unlink()
+    finally:
+        verrou.unlink()
 
 
 def load_prompt(name: str) -> str:
@@ -105,12 +125,20 @@ def _log_usage(slug: str, etape: str, attempt: int, meta: dict, dossier: Path) -
         f.write(json.dumps(line, ensure_ascii=False) + "\n")
 
 
-def call_claude(slug: str, etape: str, system: str, user_text: str, parse, dossier: Path | None = None):
+def _sauver_refus(dossier: Path, etape: str, attempt: int, erreur: str, raw: str) -> None:
+    """Garde la sortie brute d'un essai refusé : rag_data/content/work/<slug>/refus/<etape>_essai<N>.md."""
+    path = dossier / "refus" / f"{etape}_essai{attempt}.md"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(f"<!-- refus : {erreur} -->\n{raw}", encoding="utf-8")
+
+
+def call_claude(slug: str, etape: str, system: str, user_text: str, parse, dossier: Path | None = None, nettoyer=strip_code_fence):
     """Appel `claude -p` + validation par `parse(raw) -> valeur`.
 
     `parse` lève `ValueError` si la réponse n'est pas exploitable : nouvel essai.
     Un échec d'infrastructure (process, délai) est aussi retenté.
     `dossier` : dossier de sortie de l'article (usage.jsonl y est écrit) ; par défaut rag_data/content/work/<slug>/.
+    `nettoyer` : retrait de l'enveloppe de la réponse avant `parse` (par défaut `strip_code_fence`).
     """
     dossier = dossier or content_dir(slug)
     last_error = ""
@@ -123,9 +151,10 @@ def call_claude(slug: str, etape: str, system: str, user_text: str, parse, dossi
         else:
             _log_usage(slug, etape, attempt, meta, dossier)
             try:
-                return parse(strip_code_fence(raw))
+                return parse(nettoyer(raw))
             except ValueError as exc:
                 last_error = str(exc)
+                _sauver_refus(dossier, etape, attempt, last_error, raw)
         print(f"  [{etape}] essai {attempt}/{MAX_ATTEMPTS} : {last_error}", file=sys.stderr)
     raise EtapeError(last_error)
 

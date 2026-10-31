@@ -125,6 +125,7 @@ def retrieve(
     max_sections: int = DEFAULT_MAX_SECTIONS,
     result_cap: int = DEFAULT_RESULT_CAP,
     relevance_margin: float = DEFAULT_RELEVANCE_MARGIN,
+    read_only: bool = False,
 ) -> list[RetrievedChunk]:
     """Recupere un ensemble complet de chunks pertinents pour `query` --
     texte, formule, image et code, potentiellement de plusieurs documents --
@@ -179,7 +180,7 @@ def retrieve(
                 included[key] = _to_retrieved(doc_id, raw_chunk["index"], None, "section")
 
     # --- expansion par concept : candidats generes par le graphe, juges individuellement ---
-    graph = ConceptGraph(graph_db_path)
+    graph = ConceptGraph(graph_db_path, read_only=read_only)
     seen_concept_ids: set[str] = set()
     candidate_reason: dict[tuple[str, int], str] = {}
 
