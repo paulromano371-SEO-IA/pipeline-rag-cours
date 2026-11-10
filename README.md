@@ -90,7 +90,7 @@ Chaque étape est une commande indépendante (un skill Claude Code), invocable s
 
 <a id="etape-1"></a>
 
-### 1. `/cours-condense` — Génération du cours condensé · [🔗](https://github.com/paulromano371-SEO-IA/pipeline-rag-cours/tree/main/.claude/skills/cours-condense "Lien vers la commande cours-condense")
+### 1. `/cours-condense` - Génération du cours condensé · [🔗](https://github.com/paulromano371-SEO-IA/pipeline-rag-cours/tree/main/.claude/skills/cours-condense "Lien vers la commande cours-condense")
 
 `/cours-condense <chemin_vers_livre.pdf>`
 
@@ -104,7 +104,7 @@ Lit le pdf source **intégralement** (jamais un extrait) et produit un support d
 
 <a id="etape-2"></a>
 
-### 2. `/rag-extraction` — Conversion en markdown pivot · [🔗](https://github.com/paulromano371-SEO-IA/pipeline-rag-cours/tree/main/.claude/skills/rag-extraction "Lien vers la commande rag-extraction")
+### 2. `/rag-extraction` - Conversion en markdown pivot · [🔗](https://github.com/paulromano371-SEO-IA/pipeline-rag-cours/tree/main/.claude/skills/rag-extraction "Lien vers la commande rag-extraction")
 
 `/rag-extraction <chemin_vers_pdf_condense>`
 
@@ -112,23 +112,23 @@ Convertit le PDF condensé (sortie de l'étape 1) en un markdown "pivot" qui dis
 
 <a id="etape-3"></a>
 
-### 3. `/rag-nottext` — Description des éléments non-textuels · [🔗](https://github.com/paulromano371-SEO-IA/pipeline-rag-cours/tree/main/.claude/skills/rag-nottext "Lien vers la commande rag-nottext")
+### 3. `/rag-nottext` - Description des éléments non-textuels · [🔗](https://github.com/paulromano371-SEO-IA/pipeline-rag-cours/tree/main/.claude/skills/rag-nottext "Lien vers la commande rag-nottext")
 
 `/rag-nottext <pdf_condense_ou_document_id>`
 
-Pour chaque image, bloc de code et formule d'affichage (déjà en LaTeX) produits à l'étape 2 : description en langage naturel, OCR/renommage adapté pour les images (classification formule mathématique vs image générale, LaTeX via pix2tex ou texte via tesseract, nom de fichier explicite), puis injection de cette description dans le markdown pivot, juste après l'élément. Un modèle d'embedding texte ne rapproche quasiment jamais une question en français d'un verbatim LaTeX, code ou image brut — vérifié empiriquement — donc sans cette étape, ce contenu reste invisible à la recherche vectorielle.
+Pour chaque image, bloc de code et formule d'affichage (déjà en LaTeX) produits à l'étape 2 : description en langage naturel, OCR/renommage adapté pour les images (classification formule mathématique vs image générale, LaTeX via pix2tex ou texte via tesseract, nom de fichier explicite), puis injection de cette description dans le markdown pivot, juste après l'élément. Un modèle d'embedding texte ne rapproche quasiment jamais une question en français d'un verbatim LaTeX, code ou image brut - vérifié empiriquement - donc sans cette étape, ce contenu reste invisible à la recherche vectorielle.
 
 <a id="etape-4"></a>
 
-### 4. `/rag-chunking` — Découpage en chunks · [🔗](https://github.com/paulromano371-SEO-IA/pipeline-rag-cours/tree/main/.claude/skills/rag-chunking "Lien vers la commande rag-chunking")
+### 4. `/rag-chunking` - Découpage en chunks · [🔗](https://github.com/paulromano371-SEO-IA/pipeline-rag-cours/tree/main/.claude/skills/rag-chunking "Lien vers la commande rag-chunking")
 
 `/rag-chunking <pdf_condense_ou_document_id>`
 
-Découpe le markdown pivot enrichi en chunks d'environ 400 tokens (avec recouvrement), sans jamais couper un bloc de code, une image ou une formule au milieu. Pour un élément décrit par `/rag-nottext`, le texte réellement embeddé (calculé à l'étape suivante) ne retient que sa description en langage naturel — jamais le verbatim brut — pour ne pas diluer la similarité avec une question en français. Les sections structurelles (table des matières, sommaire, index, bibliographie...) sont exclues du découpage : elles restent dans `pivot.md` mais n'engendrent aucun chunk, donc rien n'est indexé, envoyé à l'extraction de concepts ni relié au graphe. Étape purement déterministe (basée sur le tokenizer réel du modèle d'embedding, `BAAI/bge-m3`), aucun appel à un modèle de langage.
+Découpe le markdown pivot enrichi en chunks d'environ 400 tokens (avec recouvrement), sans jamais couper un bloc de code, une image ou une formule au milieu. Pour un élément décrit par `/rag-nottext`, le texte réellement embeddé (calculé à l'étape suivante) ne retient que sa description en langage naturel - jamais le verbatim brut - pour ne pas diluer la similarité avec une question en français. Les sections structurelles (table des matières, sommaire, index, bibliographie...) sont exclues du découpage : elles restent dans `pivot.md` mais n'engendrent aucun chunk, donc rien n'est indexé, envoyé à l'extraction de concepts ni relié au graphe. Étape purement déterministe (basée sur le tokenizer réel du modèle d'embedding, `BAAI/bge-m3`), aucun appel à un modèle de langage.
 
 <a id="etape-5"></a>
 
-### 5. `/rag-index` — Indexation vectorielle · [🔗](https://github.com/paulromano371-SEO-IA/pipeline-rag-cours/tree/main/.claude/skills/rag-index "Lien vers la commande rag-index")
+### 5. `/rag-index` - Indexation vectorielle · [🔗](https://github.com/paulromano371-SEO-IA/pipeline-rag-cours/tree/main/.claude/skills/rag-index "Lien vers la commande rag-index")
 
 `/rag-index <pdf_condense_ou_document_id>`
 
@@ -136,7 +136,7 @@ Calcule les embeddings de chaque chunk (modèle multilingue local `BAAI/bge-m3` 
 
 <a id="etape-6"></a>
 
-### 6. `/rag-concepts` — Extraction des concepts · [🔗](https://github.com/paulromano371-SEO-IA/pipeline-rag-cours/tree/main/.claude/skills/rag-concepts "Lien vers la commande rag-concepts")
+### 6. `/rag-concepts` - Extraction des concepts · [🔗](https://github.com/paulromano371-SEO-IA/pipeline-rag-cours/tree/main/.claude/skills/rag-concepts "Lien vers la commande rag-concepts")
 
 `/rag-concepts <pdf_condense_ou_document_id>`
 
@@ -144,7 +144,7 @@ Pour chaque chunk indexable, un appel `claude -p` headless extrait 3 à 8 concep
 
 <a id="etape-7"></a>
 
-### 7. `/rag-graphe` — Construction du graphe de connaissances (GraphRAG) · [🔗](https://github.com/paulromano371-SEO-IA/pipeline-rag-cours/tree/main/.claude/skills/rag-graphe "Lien vers la commande rag-graphe")
+### 7. `/rag-graphe` - Construction du graphe de connaissances (GraphRAG) · [🔗](https://github.com/paulromano371-SEO-IA/pipeline-rag-cours/tree/main/.claude/skills/rag-graphe "Lien vers la commande rag-graphe")
 
 `/rag-graphe <pdf_condense_ou_document_id>`
 
@@ -154,13 +154,13 @@ Résout chaque concept extrait en comparant sa similarité d'embedding (forme ca
 - similarité < 0.80 : nouveau concept,
 - entre les deux, ou ≥ 0.92 vers un concept vu seulement dans d'autres pdfs : arbitrage par un appel `claude -p` dédié, sur les 3 concepts les plus proches, avec la définition, le pdf et un extrait du chunk de chaque côté.
 
-C'est cette étape qui permet de repérer qu'un même concept est traité dans plusieurs pdfs différents — l'intérêt principal du GraphRAG par rapport à une recherche vectorielle seule.
+C'est cette étape qui permet de repérer qu'un même concept est traité dans plusieurs pdfs différents - l'intérêt principal du GraphRAG par rapport à une recherche vectorielle seule.
 
 Une fois le graphe du document terminé, une **consolidation** du graphe partagé (`rag-graphe/scripts/consolidate.py`, lancée par le skill, par lots) rattrape les doublons restants : les paires de concepts à similarité ≥ 0.80 sont jugées par `claude -p` et fusionnées si besoin, puis chaque concept reçoit pour forme canonique son nom le plus fréquent dans le corpus.
 
 <a id="etape-8"></a>
 
-### 8. `/rag-integrity` — Audit du graphe · [🔗](https://github.com/paulromano371-SEO-IA/pipeline-rag-cours/tree/main/.claude/skills/rag-integrity "Lien vers la commande rag-integrity")
+### 8. `/rag-integrity` - Audit du graphe · [🔗](https://github.com/paulromano371-SEO-IA/pipeline-rag-cours/tree/main/.claude/skills/rag-integrity "Lien vers la commande rag-integrity")
 
 `/rag-integrity`
 
@@ -168,7 +168,7 @@ Hors pipeline et transversal au corpus, à lancer à la demande (par exemple apr
 
 <a id="etape-9"></a>
 
-### 9. `/expressions-article` — Expressions à approfondir · [🔗](https://github.com/paulromano371-SEO-IA/pipeline-rag-cours/tree/main/.claude/skills/expressions-article "Lien vers la commande expressions-article")
+### 9. `/expressions-article` - Expressions à approfondir · [🔗](https://github.com/paulromano371-SEO-IA/pipeline-rag-cours/tree/main/.claude/skills/expressions-article "Lien vers la commande expressions-article")
 
 `/expressions-article <slug>` (ou `<numéro>`, ou `--all`)
 
@@ -176,7 +176,7 @@ Commande qui repère dans un article de `rag_data/content/work/` les expressions
 
 <a id="etape-10"></a>
 
-### 10. `/create-content` — Rédaction d'un article web · [🔗](https://github.com/paulromano371-SEO-IA/pipeline-rag-cours/tree/main/.claude/skills/create-content "Lien vers la commande create-content")
+### 10. `/create-content` - Rédaction d'un article web · [🔗](https://github.com/paulromano371-SEO-IA/pipeline-rag-cours/tree/main/.claude/skills/create-content "Lien vers la commande create-content")
 
 `/create-content <expression>` (ex. `/create-content comment fonctionne une régression logistique ?`)
 
@@ -184,8 +184,8 @@ Cette commande exploite le corpus déjà ingéré pour rédiger **un article web
 
 Le skill procède en 5 étapes, toujours en foreground :
 
-1. **Constitution du dossier** — 5 à 8 sous-requêtes (définition, intuition, formule, apprentissage, code, interprétation, limites, voisins) passées à `gather.py`, qui appelle `retrieval.retrieve()`, fusionne et dédoublonne les chunks, puis écrit `dossier.md` / `dossier.json` et copie les images. Il mesure aussi la couverture multi-pdfs et repère les chunks à « signal distinctif » (chiffre précis, entité nommée) pour aider à produire un contenu non générique. Lecture seule, aucun appel à un modèle de langage.
-2. **Conception** — lecture complète du dossier, choix d'une idée directrice, d'un fil conducteur concret et d'une progression du concret vers l'abstrait.
+1. **Constitution du dossier** - 5 à 8 sous-requêtes (définition, intuition, formule, apprentissage, code, interprétation, limites, voisins) passées à `gather.py`, qui appelle `retrieval.retrieve()`, fusionne et dédoublonne les chunks, puis écrit `dossier.md` / `dossier.json` et copie les images. Il mesure aussi la couverture multi-pdfs et repère les chunks à « signal distinctif » (chiffre précis, entité nommée) pour aider à produire un contenu non générique. Lecture seule, aucun appel à un modèle de langage.
+2. **Conception** - lecture complète du dossier, choix d'une idée directrice, d'un fil conducteur concret et d'une progression du concret vers l'abstrait.
 3. **Rédaction** de `article.md` selon une trame : accroche, l'essentiel en 30 secondes, intuition, formalisation, code, lecture des résultats, pièges, pour aller plus loin, à retenir. Tutoiement imposé, aucune longueur cible.
 4. **Vérification** par `verify.py` (déterministe, bloquante) : code repris à l'identique du dossier, images et formules issues du dossier, citations de traçabilité `<!--src:Sxxx-->` valides, aucune fuite de la mécanique interne (« chunk », identifiants), structure du frontmatter, absence de vouvoiement. Elle émet aussi des avertissements (couverture non utilisée, paragraphes trop longs, variable de code possiblement non définie, légende d'image incohérente, faible part de matière distinctive).
 5. **Relecture éditoriale** (accroche, fact-check, notation unique, code, légendes) puis rapport final : couverture, lacunes du corpus, décisions éditoriales et verdict commodity / non-commodity.
@@ -198,7 +198,7 @@ Sortie : `rag_data/content/work/<slug>/` (`article.md`, `dossier.md`, `dossier.j
 
 <a id="etape-11"></a>
 
-### 11. `/publish-content` — Publication sur WordPress · [🔗](https://github.com/paulromano371-SEO-IA/pipeline-rag-cours/tree/main/.claude/skills/publish-content "Lien vers la commande publish-content")
+### 11. `/publish-content` - Publication sur WordPress · [🔗](https://github.com/paulromano371-SEO-IA/pipeline-rag-cours/tree/main/.claude/skills/publish-content "Lien vers la commande publish-content")
 
 `/publish-content <slug>` (le slug est le nom du dossier sous `rag_data/content/work/`)
 
@@ -215,7 +215,7 @@ Cette commande envoie sur un site WordPress, via l'API REST, un article produit 
 
 <a id="etape-12"></a>
 
-### 12. `/maillage` — Propositions de maillage interne · [🔗](https://github.com/paulromano371-SEO-IA/pipeline-rag-cours/tree/main/.claude/skills/maillage "Lien vers la commande maillage")
+### 12. `/maillage` - Propositions de maillage interne · [🔗](https://github.com/paulromano371-SEO-IA/pipeline-rag-cours/tree/main/.claude/skills/maillage "Lien vers la commande maillage")
 
 `/maillage <slug>` (ou `<numéro>`, ou `--all`)
 
@@ -223,7 +223,7 @@ Cette commande construit une base vectorielle et un graphe Kuzu **à part** ( to
 
 <a id="etape-13"></a>
 
-### 13. `/publish-maillage` — Insertion des liens sur WordPress · [🔗](https://github.com/paulromano371-SEO-IA/pipeline-rag-cours/tree/main/.claude/skills/publish-maillage "Lien vers la commande publish-maillage")
+### 13. `/publish-maillage` - Insertion des liens sur WordPress · [🔗](https://github.com/paulromano371-SEO-IA/pipeline-rag-cours/tree/main/.claude/skills/publish-maillage "Lien vers la commande publish-maillage")
 
 `/publish-maillage <slug>` (ou `<numéro>`, ou `--all`)
 
@@ -243,12 +243,12 @@ Enchaîne automatiquement les étapes d'ingestion 1 à 7 sur un pdf source, puis
 
 Scripts hors-pipeline pour explorer ou auditer le corpus déjà ingéré. Seuls `rename_concept.py` et `migrate_chunk_modalities.py` modifient les bases (voir leur description), les autres sont en lecture seule :
 
-- **`analyze_embedder_candidates.py`** — mesure la longueur réelle du texte qui serait embeddé (par type de contenu et au niveau des chunks) pour plusieurs modèles d'embedding candidats, afin de choisir un couple tokenizer/modèle sur données mesurées plutôt que sur des specs génériques.
-- **`analyze_retrieval_coverage.py`** — pour une requête donnée, compare la recherche vectorielle brute (top-k plat) à `retrieval.retrieve()` (section + expansion par concept via le graphe), et mesure si tout le contenu associé (formules, images, code) d'une section est effectivement remonté.
-- **`retrieval.py`** — module de récupération combinant recherche vectorielle, expansion par section (fil d'ariane) et expansion par concept via le graphe (`retrieval.retrieve()`), utilisé par `rag_query.py` et `analyze_retrieval_coverage.py`.
-- **`rag_query.py`** — interroge le RAG avec `retrieval.retrieve()` et affiche le résultat de façon lisible (regroupé par document puis section), pour une exploration manuelle rapide.
-- **`rename_concept.py`** — change la forme canonique d'un concept du graphe (le nouveau nom doit déjà être un de ses alias ; `--dry-run` pour simuler). Modifie `rag_data/db/graph/`, à ne pas lancer pendant qu'une étape du pipeline tourne.
-- **`migrate_chunk_modalities.py`** — migration ponctuelle qui ajoute `has_image` aux `chunks.json` et copie `has_formula` / `has_image` dans les métadonnées Chroma, sans ré-embedder ni toucher au graphe (simulation par défaut, `--apply` pour écrire ; la base d'origine est sauvegardée).
+- **`analyze_embedder_candidates.py`** - mesure la longueur réelle du texte qui serait embeddé (par type de contenu et au niveau des chunks) pour plusieurs modèles d'embedding candidats, afin de choisir un couple tokenizer/modèle sur données mesurées plutôt que sur des specs génériques.
+- **`analyze_retrieval_coverage.py`** - pour une requête donnée, compare la recherche vectorielle brute (top-k plat) à `retrieval.retrieve()` (section + expansion par concept via le graphe), et mesure si tout le contenu associé (formules, images, code) d'une section est effectivement remonté.
+- **`retrieval.py`** - module de récupération combinant recherche vectorielle, expansion par section (fil d'ariane) et expansion par concept via le graphe (`retrieval.retrieve()`), utilisé par `rag_query.py` et `analyze_retrieval_coverage.py`.
+- **`rag_query.py`** - interroge le RAG avec `retrieval.retrieve()` et affiche le résultat de façon lisible (regroupé par document puis section), pour une exploration manuelle rapide.
+- **`rename_concept.py`** - change la forme canonique d'un concept du graphe (le nouveau nom doit déjà être un de ses alias ; `--dry-run` pour simuler). Modifie `rag_data/db/graph/`, à ne pas lancer pendant qu'une étape du pipeline tourne.
+- **`migrate_chunk_modalities.py`** - migration ponctuelle qui ajoute `has_image` aux `chunks.json` et copie `has_formula` / `has_image` dans les métadonnées Chroma, sans ré-embedder ni toucher au graphe (simulation par défaut, `--apply` pour écrire ; la base d'origine est sauvegardée).
 
 Le rapport de qualité du graphe, ancien `graph_quality_report.py`, est désormais le skill `/rag-integrity` (ci-dessus).
 
@@ -267,27 +267,27 @@ rag_data/           toutes les données générées par le pipeline (chunks, emb
 
 `corpusdedepart/`, `corpuscondense/` et `rag_data/` sont exclus du dépôt via `.gitignore` : ce sont des données volumineuses. Aucun des trois n'existe donc après un `git clone`.
 
-- `corpuscondense/` et `rag_data/` sont créés automatiquement par le pipeline à la première exécution (`/cours-condense` puis les étapes suivantes) — rien à faire.
-- `corpusdedepart/` n'est en revanche créé par aucun script : c'est l'emplacement conventionnel où déposer ses PDF sources (les pdfs complets à condenser). À créer manuellement (`mkdir corpusdedepart`) avant la première utilisation, puis y placer ses PDF avant de lancer `/cours-condense <chemin_vers_livre.pdf>` — ou, à défaut, passer directement le chemin du PDF où qu'il se trouve, sans utiliser ce dossier.
+- `corpuscondense/` et `rag_data/` sont créés automatiquement par le pipeline à la première exécution (`/cours-condense` puis les étapes suivantes) - rien à faire.
+- `corpusdedepart/` n'est en revanche créé par aucun script : c'est l'emplacement conventionnel où déposer ses PDF sources (les pdfs complets à condenser). À créer manuellement (`mkdir corpusdedepart`) avant la première utilisation, puis y placer ses PDF avant de lancer `/cours-condense <chemin_vers_livre.pdf>` - ou, à défaut, passer directement le chemin du PDF où qu'il se trouve, sans utiliser ce dossier.
 
 <a id="installation"></a>
 
 ## Installation
 
-⚠️ **Windows uniquement.** Ce projet n'a été développé et testé que sous Windows — `requirements.txt` contient des paquets Windows-only (`win32_setctime`, `pyreadline3`), et les dépendances système ci-dessous (Tesseract, Visual C++ Build Tools) s'installent via `winget`. Aucune compatibilité macOS/Linux n'est garantie ni maintenue actuellement.
+⚠️ **Windows uniquement.** Ce projet n'a été développé et testé que sous Windows - `requirements.txt` contient des paquets Windows-only (`win32_setctime`, `pyreadline3`), et les dépendances système ci-dessous (Tesseract, Visual C++ Build Tools) s'installent via `winget`. Aucune compatibilité macOS/Linux n'est garantie ni maintenue actuellement.
 
-### Étape 0 — Récupérer le projet
+### Étape 0 - Récupérer le projet
 
-Cloner (ou télécharger puis extraire) ce dépôt, puis se placer à sa racine (le dossier contenant `.claude/`, `requirements.txt`, ce `README.md`) — toutes les commandes des étapes suivantes s'exécutent depuis cet emplacement :
+Cloner (ou télécharger puis extraire) ce dépôt, puis se placer à sa racine (le dossier contenant `.claude/`, `requirements.txt`, ce `README.md`) - toutes les commandes des étapes suivantes s'exécutent depuis cet emplacement :
 
 ```bash
 git clone https://github.com/paulromano371-SEO-IA/pipeline-rag-cours
 cd pipeline-rag-cours
 ```
 
-### Étape 1 — Visual C++ Build Tools (obligatoire AVANT l'étape 3)
+### Étape 1 - Visual C++ Build Tools (obligatoire AVANT l'étape 3)
 
-`stringzilla` (dépendance de `pix2tex`) n'a pas de wheel précompilé pour Windows sur PyPI : `pip` compile ses sources localement à l'étape 3, ce qui échoue sans compilateur C++. Aucune commande du projet n'installe ce compilateur automatiquement — il faut le faire manuellement, et avant l'étape 3. Il faut supporter le standard **C++17** (n'importe quelle version de Visual Studio 2019+ ou les Build Tools 2022 conviennent, pas de version exacte à respecter) :
+`stringzilla` (dépendance de `pix2tex`) n'a pas de wheel précompilé pour Windows sur PyPI : `pip` compile ses sources localement à l'étape 3, ce qui échoue sans compilateur C++. Aucune commande du projet n'installe ce compilateur automatiquement - il faut le faire manuellement, et avant l'étape 3. Il faut supporter le standard **C++17** (n'importe quelle version de Visual Studio 2019+ ou les Build Tools 2022 conviennent, pas de version exacte à respecter) :
 
 ```bash
 winget install --id Microsoft.VisualStudio.2022.BuildTools --override "--quiet --wait --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"
@@ -295,7 +295,7 @@ winget install --id Microsoft.VisualStudio.2022.BuildTools --override "--quiet -
 
 (ou `winget install --id Microsoft.VisualStudio.2022.BuildTools` sans `--override` pour l'installeur graphique, puis cocher le workload **"Desktop development with C++"** manuellement)
 
-### Étape 2 — Tesseract OCR (recommandée AVANT l'étape 3)
+### Étape 2 - Tesseract OCR (recommandée AVANT l'étape 3)
 
 ```bash
 winget install --id UB-Mannheim.TesseractOCR
@@ -303,7 +303,7 @@ winget install --id UB-Mannheim.TesseractOCR
 
 Installe le binaire dans `C:\Program Files\Tesseract-OCR\tesseract.exe` : c'est l'emplacement attendu par le code (`.claude/skills/rag-nottext/scripts/ocr_general.py`), pas besoin de l'ajouter manuellement au PATH ni de redémarrer le terminal. Les modèles de langue français/anglais sont déjà fournis dans `.claude/skills/rag-nottext/scripts/tessdata/` (le paquet winget n'inclut que l'anglais). Doit être fait avant de lancer `/rag-nottext`, qui l'utilise via `ocr_general.py` pour toute image du pipeline.
 
-### Étape 3 — Environnement Python
+### Étape 3 - Environnement Python
 
 ```bash
 python -m venv .venv-rag
@@ -336,9 +336,9 @@ Le venv Python (`.venv-rag/`) et Tesseract n'ont besoin d'être ni activés ni r
 
 ## Points d'attention techniques
 
-- **Exécution en arrière-plan du pipeline RAG : bloquée automatiquement, pas seulement déconseillée.** Le hook `.claude/hooks/block_rag_background.py` refuse toute commande `run_in_background` référençant un script des étapes 1 à 7 — Claude ne peut donc pas violer cette règle par erreur. Pourquoi cette règle existe : plusieurs étapes appellent `claude -p` en interne, et des invocations concurrentes provoqueraient des timeouts ou des corruptions de la base partagée (Chroma, Kuzu) si le hook ne les empêchait pas.
-- **Délégation de la lecture de `pivot.md` à un sous-agent : bloquée automatiquement, même logique.** Le hook `.claude/hooks/block_rag_extraction_subagent_read.py` refuse toute délégation à l'outil Agent de la lecture ou de la vérification de `pivot.md` (sortie de `/rag-extraction`) et de son rapport qualité/fidélité — même contrainte de déterminisme que ci-dessus.
-- `rag_data/` centralise l'état de tout le corpus (base vectorielle et graphe uniques, communs à tous les documents) — ne jamais le supprimer, même partiellement.
+- **Exécution en arrière-plan du pipeline RAG : bloquée automatiquement, pas seulement déconseillée.** Le hook `.claude/hooks/block_rag_background.py` refuse toute commande `run_in_background` référençant un script des étapes 1 à 7 - Claude ne peut donc pas violer cette règle par erreur. Pourquoi cette règle existe : plusieurs étapes appellent `claude -p` en interne, et des invocations concurrentes provoqueraient des timeouts ou des corruptions de la base partagée (Chroma, Kuzu) si le hook ne les empêchait pas.
+- **Délégation de la lecture de `pivot.md` à un sous-agent : bloquée automatiquement, même logique.** Le hook `.claude/hooks/block_rag_extraction_subagent_read.py` refuse toute délégation à l'outil Agent de la lecture ou de la vérification de `pivot.md` (sortie de `/rag-extraction`) et de son rapport qualité/fidélité - même contrainte de déterminisme que ci-dessus.
+- `rag_data/` centralise l'état de tout le corpus (base vectorielle et graphe uniques, communs à tous les documents) - ne jamais le supprimer, même partiellement.
 
 <a id="licence"></a>
 
@@ -346,4 +346,4 @@ Le venv Python (`.venv-rag/`) et Tesseract n'ont besoin d'être ni activés ni r
 
 Ce projet est distribué sous licence [Apache 2.0](LICENSE).
 
-Copyright 2026 Paul Romano — [LinkedIn](https://www.linkedin.com/in/paulromano/)
+Copyright 2026 Paul Romano - [LinkedIn](https://www.linkedin.com/in/paulromano/)
